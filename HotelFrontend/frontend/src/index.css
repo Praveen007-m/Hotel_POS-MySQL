@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
+
+@import "tailwindcss";
+
+/* ===============================
+   Royal Theme Variables
+================================*/
+:root {
+  --royal-navy: #0A1A2F;      /* sidebar / headers */
+  --royal-deep: #09172A;      /* darker variant */
+  --gold: #E8C878;            /* theme B accent */
+  --muted: #6b7280;
+  --card-bg: #ffffff;
+}
+
+/* ===============================
+   Base Background
+================================*/
+body {
+  font-family: "Poppins", sans-serif;
+  background: linear-gradient(180deg, #f7f9fb 0%, #f1f4f8 100%);
+  color: var(--royal-navy);
+}
+
+/* ===============================
+   Custom Color Utilities
+================================*/
+
+/* Light royal background */
+.bg-royal-50 {
+  background-color: #f5f7fa;
+}
+
+/* Dark text */
+.text-royal-900 {
+  color: var(--royal-navy);
+}
+
+/* ===============================
+   Card / Glass Effect
+================================*/
+.card {
+  background: var(--card-bg);
+  border-radius: 1rem;
+  border: 1px solid rgba(10, 26, 47, 0.06);
+  box-shadow: 0 4px 12px rgba(10, 26, 47, 0.06);
+  padding: 1.5rem;
+  transition: 0.25s ease;
+}
+
+.card:hover {
+  box-shadow: 0 8px 22px rgba(10, 26, 47, 0.08);
+}
+
+/* ===============================
+   Soft Shadows
+================================*/
+.shadow-soft {
+  box-shadow: 0 6px 20px rgba(10, 26, 47, 0.15);
+}
+
+/* ===============================
+   Gold Accent Helpers
+================================*/
+.accent-gold {
+  color: var(--gold);
+}
+
+.bg-gold-100 {
+  background: rgba(232, 200, 120, 0.12);
+}
+
+.border-gold {
+  border-color: rgba(232, 200, 120, 0.3);
+}
+@layer components{
+  .input {
+  @apply border border-gray-300 rounded-lg px-3 py-2
+         focus:outline-none focus:ring-2 focus:ring-blue-500
+         focus:border-blue-500 transition bg-gray-50;
+}
+
+}
+
+/* ===============================
+   Utility: Scrollbar Hide
+================================*/
+.scrollbar-hide {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
