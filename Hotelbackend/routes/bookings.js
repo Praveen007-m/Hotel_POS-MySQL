@@ -252,232 +252,37 @@ router.post("/", requireAuth, async (req, res) => {
   }
 });
 
-// POST - CHECKOUT (MUST BE BEFORE /:id routes)
+// POST - CHECKOUT (uses CheckoutService)
 router.post("/:id/checkout", requireAuth, async (req, res) => {
-  const bookingId = req.params.id;
-
-  console.log("Checkout request received for booking ID:", bookingId);
-  console.log("Request body:", req.body);
-
-  let { check_out, add_ons, total_amount, gst_number } = req.body;
-
-  if (!add_ons) add_ons = [];
-  if (!Array.isArray(add_ons)) {
-    try {
-      add_ons = JSON.parse(add_ons);
-      if (!Array.isArray(add_ons)) add_ons = [];
-    } catch (e) {
-      add_ons = [];
+  try {
+    const bookingId = req.params.id;
+    const checkoutService = require('../services/checkoutService');
+    
+    console.log(`Processing checkout for booking ${bookingId}`);
+    
+    const result = await checkoutService.processCheckout(bookingId, req.body, req.user);
+    
+    if (!result.success) {
+      return res.status(result.error.includes('Duplicate') ? 409 : 400).json({
+        error: result.error,
+        idempotency_key: result.idempotency_key
+      });
     }
+
+    res.json({
+      success: true,
+      message: "Checkout completed successfully",
+      billing_id: result.billing_id,
+      idempotency_key: result.idempotency_key,
+      summary: result.summary
+    });
+  } catch (error) {
+    console.error('Checkout processing failed:', error);
+    res.status(500).json({ 
+      error: 'Checkout failed: ' + error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
-
-  db.serialize(async () => {
-    try {
-      await runQuery("BEGIN TRANSACTION");
-
-      // 1) Fetch booking
-      const booking = await getQuery("SELECT * FROM bookings WHERE id = ?", [
-        bookingId,
-      ]);
-
-      if (!booking) {
-        await runQuery("ROLLBACK");
-        return res.status(404).json({ error: "Booking not found" });
-      }
-
-      console.log("Booking found:", booking.booking_id);
-
-      // Prevent double checkout
-      if (booking.status === "Checked-out") {
-        await runQuery("ROLLBACK");
-        return res.status(400).json({ error: "Booking already checked out" });
-      }
-      // Decide checkout time
-      const finalCheckoutTime = booking.check_out
-        ? booking.check_out // 🟢 booking-time checkout
-        : new Date().toISOString(); // 🟢 real checkout click time
-
-      // 2) Update booking to Checked-out
-      const updateBookingRes = await runQuery(
-        "UPDATE bookings SET status = 'Checked-out', check_out = ? WHERE id = ? AND status != 'Checked-out'",
-        [finalCheckoutTime, bookingId],
-      );
-
-      if (
-        typeof updateBookingRes.changes !== "undefined" &&
-        updateBookingRes.changes === 0
-      ) {
-        await runQuery("ROLLBACK");
-        return res
-          .status(409)
-          .json({ error: "Checkout conflict: booking status unchanged" });
-      }
-
-      console.log("Booking status updated to Checked-out");
-
-      // 3) Update room status to Available
-      await runQuery("UPDATE rooms SET status = 'Available' WHERE id = ?", [
-        booking.room_id,
-      ]);
-
-      console.log("Room status updated to Available");
-
-      // 4) Gather kitchen orders
-      const kitchenOrderRows = await allQuery(
-        `SELECT 
-          ko.id AS ko_id,
-          ko.item_id,
-          ko.quantity,
-          mi.name AS item_name,
-          mi.price AS item_price
-        FROM kitchen_orders ko
-        JOIN menu_items mi ON ko.item_id = mi.id
-        WHERE ko.booking_id = ?
-          AND ko.status IN ('Pending','Served')`,
-        [booking.booking_id],
-      );
-
-      console.log(`Found ${kitchenOrderRows.length} kitchen orders`);
-
-      // Aggregate kitchen orders
-      const aggregatedKitchen = {};
-      for (const k of kitchenOrderRows) {
-        const key = k.item_id;
-        if (!aggregatedKitchen[key]) {
-          aggregatedKitchen[key] = {
-            item_id: k.item_id,
-            item_name: k.item_name,
-            item_price: Number(k.item_price) || 0,
-            quantity: Number(k.quantity) || 0,
-          };
-        } else {
-          aggregatedKitchen[key].quantity += Number(k.quantity) || 0;
-        }
-      }
-
-      const kitchenOrdersForBilling = Object.values(aggregatedKitchen);
-
-      // 5) Compute amounts
-      let computedKitchenTotal = 0;
-      for (const k of kitchenOrdersForBilling) {
-        computedKitchenTotal += k.quantity * (Number(k.item_price) || 0);
-      }
-
-      // NEW: Save add-ons to booking_addons table (atomic)
-      for (const a of add_ons) {
-        const name = a.name || a.description || 'Custom Add-on';
-        const price = Number(a.price || a.amount || 0);
-        if (price > 0) {
-          await runQuery(`
-            INSERT INTO booking_addons (booking_id, name, price)
-            VALUES (?, ?, ?)
-          `, [booking.id, name, price]);
-        }
-      }
-
-      let computedAddOnsTotal = 0;
-      const normalizedAddOns = add_ons.map(a => ({
-        description: a.name || a.description || 'Custom Add-on',
-        amount: Number(a.price || a.amount || 0)
-      })).filter(a => a.amount > 0);
-
-      normalizedAddOns.forEach(a => computedAddOnsTotal += a.amount);
-
-      const roomPrice = Number(booking.price) || 0;
-
-      total_amount = total_amount || roomPrice + computedKitchenTotal + computedAddOnsTotal;
-
-      console.log("Billing calculation:", {
-        roomPrice,
-        addOnsTotal: computedAddOnsTotal,
-        kitchenTotal: computedKitchenTotal,
-        total_amount,
-      });
-
-      // Resolve billed by
-      const billed_by_id = req.user.id;
-      const billed_by_role = req.user.role;
-      let billed_by_name;
-
-      if (billed_by_role === "admin") {
-        const admin = await getQuery("SELECT name FROM users WHERE id = ?", [billed_by_id]);
-        billed_by_name = admin?.name || "Admin";
-      } else if (billed_by_role === "staff") {
-        const staff = await getQuery(
-          `SELECT s.name FROM users u JOIN staff s ON u.staff_id = s.id WHERE u.id = ?`,
-          [billed_by_id]
-        );
-        billed_by_name = staff?.name || "Staff";
-      }
-
-      // Insert billing (add_ons now JSON summary for PDF)
-      const insertBillingQuery = `
-        INSERT INTO billings (booking_id, customer_id, room_id, check_in, check_out, room_price, advance_paid, add_ons, kitchen_orders, total_amount, gst_number, billed_by_id, billed_by_name, billed_by_role)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-      await runQuery(insertBillingQuery, [
-        booking.booking_id,
-        booking.customer_id,
-        booking.room_id,
-        booking.check_in,
-        finalCheckoutTime,
-        roomPrice,
-        booking.advance_paid || 0,
-        JSON.stringify(normalizedAddOns),
-        JSON.stringify(kitchenOrdersForBilling),
-        total_amount,
-        gst_number || null,
-        billed_by_id,
-        billed_by_name,
-        billed_by_role,
-      ]);
-
-      console.log("✅ Billing + addons saved");
-
-
-      // 7) Mark kitchen orders as 'Settled'
-      if (kitchenOrderRows.length > 0) {
-        const kitchenIds = kitchenOrderRows.map((r) => r.ko_id);
-        const placeholders = kitchenIds.map(() => "?").join(",");
-        await runQuery(
-          `UPDATE kitchen_orders SET status = 'Settled' WHERE id IN (${placeholders})`,
-          kitchenIds,
-        );
-        console.log(`Marked ${kitchenIds.length} kitchen orders as Settled`);
-      }
-
-      await runQuery("COMMIT");
-      console.log("Transaction committed successfully");
-
-      res.json({
-        message: "Checked out successfully",
-        billing_summary: {
-          booking_id: booking.booking_id,
-          booking_db_id: booking.id,
-          room_id: booking.room_id,
-          check_in: booking.check_in,
-          check_out: finalCheckoutTime,
-          room_price: roomPrice,
-          add_ons: normalizedAddOns,
-          kitchen_orders: kitchenOrdersForBilling,
-          total_amount,
-          billed_by: {
-            name: billed_by_name,
-            role: billed_by_role,
-          },
-          balance_amount: total_amount - (booking.advance_paid || 0),
-        },
-      });
-    } catch (err) {
-      console.error("Checkout error:", err);
-      try {
-        await runQuery("ROLLBACK");
-      } catch (rerr) {
-        console.error("Rollback error:", rerr);
-      }
-      res.status(500).json({ error: "Checkout failed" });
-    }
-  });
 });
 
 // GET booking by ID (AFTER checkout route)

@@ -70,18 +70,42 @@ CREATE TABLE IF NOT EXISTS add_ons (
 CREATE TABLE IF NOT EXISTS billings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   booking_id TEXT,
+  idempotency_key TEXT UNIQUE,
   customer_id INTEGER,
   room_id INTEGER,
   check_in TEXT,
   check_out TEXT,
-  room_price REAL,
-  add_ons TEXT,
-  kitchen_orders TEXT,
-  total_amount REAL,
+  advance_paid REAL DEFAULT 0,
+  total_amount REAL NOT NULL,
   gst_number TEXT,
   is_downloaded INTEGER DEFAULT 0,
+  billed_by_id INTEGER,
+  billed_by_name TEXT,
+  billed_by_role TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ================== INVOICES (Line Items) ==================
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  billing_id INTEGER NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('room', 'kitchen', 'addon', 'gst', 'discount')),
+  description TEXT NOT NULL,
+  quantity INTEGER DEFAULT 1,
+  unit_price REAL NOT NULL,
+  subtotal REAL NOT NULL,
+  gst_rate REAL DEFAULT 0,
+  gst_amount REAL DEFAULT 0,
+  total REAL NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (billing_id) REFERENCES billings(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_billings_booking ON billings(booking_id);
+CREATE INDEX IF NOT EXISTS idx_billings_idempotency ON billings(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_invoices_billing ON invoices(billing_id);
+CREATE INDEX IF NOT EXISTS idx_booking_addons_booking ON booking_addons(booking_id);
 
 
 CREATE TABLE IF NOT EXISTS expenses (

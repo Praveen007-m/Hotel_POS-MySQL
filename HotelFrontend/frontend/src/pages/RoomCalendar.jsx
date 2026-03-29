@@ -114,25 +114,33 @@ export default function RoomCalendar() {
   };
 
   /* ================= GET BOOKING STATUS ================= */
-  const getBookingForRoomOnDate = (room, dateString) => {
-    return bookings.find((b) => {
-      if (b.room_id !== room.id) return false;
+/**
+ * Get booking for specific room on specific date
+ * IMPORTANT: Room is OCCUPIED from check_in (inclusive) to check_out (exclusive)
+ * Example: check_in=2024-02-28, check_out=2024-03-01
+ * → 2024-02-28: occupied ✅, 2024-02-29: occupied ✅, 2024-03-01: FREE ✅
+ */
+const getBookingForRoomOnDate = (room, dateString) => {
+  return bookings.find((b) => {
+    if (b.room_id !== room.id) return false;
 
-      const checkIn = new Date(b.check_in);
-      const checkOut = b.check_out ? new Date(b.check_out) : null;
-      const current = new Date(dateString);
+    const checkIn = new Date(b.check_in);
+    const checkOut = b.check_out ? new Date(b.check_out) : null;
+    const current = new Date(dateString);
 
-      checkIn.setHours(0, 0, 0, 0);
-      if (checkOut) checkOut.setHours(0, 0, 0, 0);
-      current.setHours(0, 0, 0, 0);
+    // Normalize all dates to start of day (00:00:00) to ignore time/timezone issues
+    checkIn.setHours(0, 0, 0, 0);
+    if (checkOut) checkOut.setHours(0, 0, 0, 0);
+    current.setHours(0, 0, 0, 0);
 
-      if (!checkOut) {
-        return current >= checkIn;
-      }
+    if (!checkOut) {
+      return current >= checkIn;
+    }
 
-      return current >= checkIn && current <= checkOut;
-    });
-  };
+    // FIXED: Use < checkOut (exclude checkout day as business rule)
+    return current >= checkIn && current < checkOut;
+  });
+};
 
   /* ================= EVENT HANDLERS ================= */
   const handlePrevious = () => {

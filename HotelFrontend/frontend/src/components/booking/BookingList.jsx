@@ -16,6 +16,8 @@ export default function BookingList({
   const [kitchenOrders, setKitchenOrders] = useState([]);
   const [availableAddons, setAvailableAddons] = useState([]);
   const [statusUpdatingId, setStatusUpdatingId] = useState(null);
+  // REMOVED: newAddon state (manual addon inputs)
+  const [selectedAddonId, setSelectedAddonId] = useState("");
 
 
   const navigate = useNavigate();
@@ -163,6 +165,50 @@ export default function BookingList({
   };
 
 
+  const handleAddonSelect = (e) => {
+    const addonId = e.target.value;
+    if (!addonId) return;
+
+    const addon = availableAddons.find(a => a.id == addonId);
+    if (!addon) return;
+
+    const key = normalize(addon.name);
+    if (checkoutData.add_ons[key]) {
+      toast.error("Addon already selected");
+      setSelectedAddonId("");
+      return;
+    }
+
+    const updatedAddons = {
+      ...checkoutData.add_ons,
+      [key]: {
+        label: addon.name,
+        price: Number(addon.price),
+        selected: true,
+      },
+    };
+
+    const addOnsTotal = Object.values(updatedAddons).reduce(
+      (sum, a) => sum + (a.selected ? a.price : 0),
+      0,
+    );
+
+    setCheckoutData((prev) => {
+      const totalAmount = prev.price + addOnsTotal + prev.kitchenTotal;
+      const balanceAmount = totalAmount - (prev.advancePaid || 0);
+      return {
+        ...prev,
+        add_ons: updatedAddons,
+        addOnsTotal,
+        totalAmount,
+        balanceAmount,
+      };
+    });
+
+    setSelectedAddonId("");
+    toast.success(`${addon.name} added`);
+  };
+
   const toggleAddon = (key) => {
     const updated = {
       ...checkoutData.add_ons,
@@ -276,21 +322,20 @@ export default function BookingList({
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl max-w-2xl w-full">
             <h3 className="text-xl font-semibold mb-4">
-                Final Checkout - Generate Bill & Settle Orders
-              </h3>
-              <p className="text-sm text-gray-600 mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
-                This will generate final bill (room + kitchen + GST), mark all kitchen orders as "Settled", and complete checkout.
-              </p>
+              Final Checkout - Generate Bill & Settle Orders
+            </h3>
 
+            <p className="text-sm text-gray-600 mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
+              This will generate final bill (room + kitchen + GST), mark all kitchen orders as "Settled", and complete checkout.
+            </p>
 
             <p className="mb-2">
-              Room: ₹{checkoutBooking.price} × {checkoutData.stayDays} nights =
-              ₹{checkoutData.price}
+              Room: ₹{checkoutBooking.price} × {checkoutData.stayDays} nights = ₹{checkoutData.price}
             </p>
+
+            {/* GST */}
             <div className="mb-3">
-              <label className="block text-sm font-medium mb-1">
-                GST Number (optional)
-              </label>
+              <label className="block text-sm font-medium mb-1">GST Number (optional)</label>
               <input
                 type="text"
                 value={checkoutData.gstNumber || ""}
@@ -305,26 +350,62 @@ export default function BookingList({
               />
             </div>
 
+            {/* ================= ADDONS ================= */}
             <p className="font-medium mb-2">Add-ons:</p>
+
+            {/* Selected addons with remove ❌ */}
             <div className="flex flex-wrap gap-2 mb-3">
-              {Object.entries(checkoutData.add_ons || {}).map(([k, v]) => (
-                <button
-                  key={k}
-                  onClick={() => toggleAddon(k)}
-                  className={`px-3 py-1 rounded ${
-                    v.selected ? "bg-blue-600 text-white" : "bg-gray-200"
-                  }`}
-                >
-                  {v.label} (₹{v.price})
-                </button>
-              ))}
+              {Object.entries(checkoutData.add_ons || {})
+                .filter(([, v]) => v.selected)
+                .map(([k, v]) => (
+                  <div
+                    key={k}
+                    className="flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-2 rounded-full text-sm shadow-sm hover:bg-blue-200 transition-all group"
+                  >
+                    <span>{v.label} (₹{v.price})</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleAddon(k);
+                      }}
+                      className="ml-1 text-red-500 hover:text-red-700 group-hover:scale-110 transition-transform"
+                      title="Remove"
+                    >
+                      ❌
+                    </button>
+                  </div>
+                ))}
             </div>
 
-            {/* ===================== KITCHEN ORDERS ===================== */}
+            {/* 🔥 ADDON DROPDOWN */}
+            <div className="mb-3">
+              <label className="block text-sm font-medium mb-1">Select Add-on</label>
+              <select
+                value={selectedAddonId}
+                onChange={handleAddonSelect}
+                className="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">-- Choose add-on --</option>
+                {availableAddons.map((addon) => {
+                  const key = normalize(addon.name);
+                  const exists = checkoutData.add_ons[key];
+                  return (
+                    <option 
+                      key={addon.id} 
+                      value={addon.id}
+                      disabled={exists}
+                    >
+                      {addon.name} (₹{addon.price})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {/* ================= KITCHEN ================= */}
             {kitchenOrders.length > 0 && (
               <>
                 <p className="font-medium mb-2 mt-4">Kitchen Orders:</p>
-
                 <div className="flex flex-wrap gap-2 mb-3">
                   {kitchenOrders.map((item, index) => (
                     <span
@@ -339,21 +420,18 @@ export default function BookingList({
               </>
             )}
 
+            {/* TOTAL */}
             <div className="mt-3 space-y-1">
-              <p className="text-lg font-semibold">
-                Total: ₹{checkoutData.totalAmount}
-              </p>
-
+              <p className="text-lg font-semibold">Total: ₹{checkoutData.totalAmount}</p>
               <p className="text-sm text-green-600">
                 Advance Paid: ₹{checkoutData.advancePaid || 0}
               </p>
-
               <p className="text-lg font-bold text-red-600">
-                Balance Amount: ₹
-                {checkoutData.balanceAmount || checkoutData.totalAmount}
+                Balance Amount: ₹{checkoutData.balanceAmount}
               </p>
             </div>
 
+            {/* ACTIONS */}
             <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={() => setCheckoutBooking(null)}
@@ -363,7 +441,7 @@ export default function BookingList({
               </button>
               <button
                 onClick={confirmCheckout}
-                className="bg-[#0A1B4D]   text-white px-4 py-2 rounded"
+                className="bg-[#0A1B4D] text-white px-4 py-2 rounded"
               >
                 Confirm Checkout
               </button>

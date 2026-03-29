@@ -15,33 +15,21 @@ router.get("/profit", billingController.getProfit);
    GET ALL BILLS
    URL: /api/billings
 ================================ */
-router.get("/", (req, res) => {
-  const query = `
-    SELECT 
-      b.id AS bill_id,
-      b.booking_id,
-      b.customer_id,
-      c.name AS customer_name,
-      b.room_id,
-      b.advance_paid,
-      b.total_amount,
-      b.gst_number,
-      b.created_at,
-      b.billed_by_name,
-      b.billed_by_role,
-      b.is_downloaded
-    FROM billings b
-    JOIN customers c ON b.customer_id = c.id
-    ORDER BY b.created_at DESC
-  `;
+const billingService = require('../services/billingService');
 
-  db.all(query, [], (err, rows) => {
-    if (err) {
-      console.error("❌ FETCH BILLS FAILED:", err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json(rows);
-  });
+router.get("/", async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search } = req.query;
+    const result = await billingService.getBillings({ 
+      page: parseInt(page), 
+      limit: parseInt(limit), 
+      search: search || '' 
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("❌ FETCH BILLS FAILED:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 /* ===============================

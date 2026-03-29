@@ -66,65 +66,18 @@ const COLORS = {
 /**
  * Generate Professional Invoice PDF using pdfkit
  */
-exports.generateInvoicePDF = (req, res) => {
+exports.generateInvoicePDF = async (req, res) => {
   try {
-    const {
-      selectedBill,
-      form = {},
-      gstIncluded = false,
-      gstRates = {},
-      gstAmounts = {},
-      subtotal = 0,
-      subtotalWithGst = 0,
-      totalAmount = 0,
-      advancePaid = 0,
-      balanceAmount = 0,
-      guestDiscount = 0,
-      gstNumber = "N/A",
-    } = req.body;
-
-    // Validation
-    if (!selectedBill) {
-      return res.status(400).json({ error: "Bill information is missing" });
+    const { billing_id } = req.body;
+    
+    if (!billing_id) {
+      return res.status(400).json({ error: 'billing_id required' });
     }
 
-    if (!selectedBill.check_in || !selectedBill.check_out) {
-      return res
-        .status(400)
-        .json({ error: "Check-in and check-out dates are required" });
-    }
+    const invoiceService = require('../services/invoiceService');
+    const invoiceData = await invoiceService.getInvoiceData(billing_id);
 
-    // Extract data
-    const roomPrice = Number(form?.room_price || selectedBill?.room_price || 0);
-    const addOns = Array.isArray(form?.add_ons)
-      ? form.add_ons
-      : Array.isArray(selectedBill?.add_ons)
-        ? selectedBill.add_ons
-        : [];
-
-    let billId =
-      selectedBill.bill_id ||
-      selectedBill.id ||
-      selectedBill.booking_id ||
-      "INV-" + Date.now();
-    billId = String(billId)
-      .replace(/[^a-zA-Z0-9_-]/g, "-")
-      .substring(0, 50);
-
-    const gstTotal = gstIncluded
-      ? Number(gstAmounts?.room || 0) + Number(gstAmounts?.addon || 0)
-      : 0;
-
-    const gstPercent = ((gstRates?.room || 0) * 100).toFixed(1);
-
-    const checkIn = new Date(selectedBill.check_in);
-    const checkOut = new Date(selectedBill.check_out);
-    const nights = Math.max(
-      1,
-      Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24)),
-    );
-
-    // Create PDF
+    // PDF generation (keeping original formatting)
     const doc = new PDFDocument({
       size: "A4",
       margin: 40,
@@ -387,14 +340,12 @@ exports.generateInvoicePDF = (req, res) => {
     tableY += 20;
 
     // Add-ons (from booking_addons or JSON)
-    let allAddons = addOns;
-    if (!allAddons.length) {
-      // Fetch from booking_addons if no JSON addons
-      // Note: This assumes selectedBill.booking_db_id exists
-      if (selectedBill.booking_db_id) {
-        db.all(`
-          SELECT name, price FROM booking_addons 
-          WHERE booking_id = ?
+    // Line items from new invoices table (grouped)
+    const allLines = invoiceData.lines;
+    const roomLines = allLines.room || [];
+    const kitchenLines = allLines.kitchen || [];
+    const addonLines = allLines.addon || [];
+    const gstLines = allLines.gst || []; 
         `, [selectedBill.booking_db_id], (err, rows) => {
           if (!err && rows.length > 0) {
             allAddons = rows.map(row => ({ name: row.name, price: row.price, qty: 1 }));
