@@ -46,7 +46,8 @@ app.use(
 
       if (
         origin.includes("netlify.app") ||
-        origin.includes("localhost")
+        origin.includes("localhost") ||
+        origin.includes("hotel-poss.netlify.app") // ✅ add your exact domain
       ) {
         return callback(null, true);
       }
