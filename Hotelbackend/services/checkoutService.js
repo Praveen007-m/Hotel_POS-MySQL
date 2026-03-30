@@ -27,7 +27,17 @@ class CheckoutService {
 
       // ================= TOTAL CALCULATION =================
 
-      const roomTotal = Number(booking.price || 0);
+      // ✅ FIX: multiply per-night rate by stay duration, same as frontend
+      const checkInDate = new Date(booking.check_in);
+      const checkOutDate = new Date(booking.check_out);
+      checkInDate.setHours(0, 0, 0, 0);
+      checkOutDate.setHours(0, 0, 0, 0);
+      const stayDays = Math.max(
+        Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24)),
+        1
+      );
+
+      const roomTotal = Number(booking.price || 0) * stayDays;
 
       // Kitchen total
       const kitchenResult = await dbService.all(
@@ -63,7 +73,8 @@ class CheckoutService {
       const providedTotal = Number(checkoutData.total_amount);
 
       console.log({
-        roomTotal,
+        roomTotal,        // now correctly rate × stayDays
+        stayDays,         // visible in logs for debugging
         kitchenTotal,
         dbAddonTotal,
         newAddonTotal,
@@ -80,7 +91,7 @@ class CheckoutService {
       // ================= TRANSACTION =================
 
       const billingId = await dbService.transaction(async () => {
-        // ✅ Save addons FIRST (IMPORTANT FIX)
+        // Save new addons first
         for (const addon of add_ons) {
           await dbService.run(
             `INSERT INTO booking_addons (booking_id, name, price)
@@ -93,7 +104,7 @@ class CheckoutService {
           );
         }
 
-        // Update booking
+        // Update booking status
         await dbService.run(
           `UPDATE bookings 
            SET status = 'Checked-out', check_out = ?
@@ -107,14 +118,14 @@ class CheckoutService {
           [booking.room_id]
         );
 
-        // Settle kitchen
+        // Settle kitchen orders
         await dbService.run(
           `UPDATE kitchen_orders SET status = 'Settled'
            WHERE booking_id = ?`,
           [bookingId]
         );
 
-        // Create billing
+        // Create billing record
         const billingResult = await dbService.run(
           `INSERT INTO billings (
             booking_id, idempotency_key, customer_id, room_id,
@@ -137,8 +148,8 @@ class CheckoutService {
           ]
         );
 
-        // Create invoice items AFTER addons saved
-        await this._createLineItems(billingResult.lastID, booking);
+        // Create invoice line items after addons are saved
+        await this._createLineItems(billingResult.lastID, booking, stayDays);
 
         return billingResult.lastID;
       });
@@ -154,24 +165,28 @@ class CheckoutService {
         },
       };
     } catch (error) {
-      console.error('Checkout failed:', error);
+      console.error('Checkout processing failed:', error);
       throw error;
     }
   }
 
-  async _createLineItems(billingId, booking) {
+  // ✅ FIX: accept stayDays so room line item reflects actual total
+  async _createLineItems(billingId, booking, stayDays = 1) {
     const lines = [];
 
-    // Room
+    // Room — quantity = stayDays, total = rate × stayDays
+    const roomUnitPrice = Number(booking.price);
+    const roomSubtotal = roomUnitPrice * stayDays;
+
     lines.push({
       billing_id: billingId,
       type: 'room',
-      description: `Room ${booking.room_number} (${booking.category})`,
-      quantity: 1,
-      unit_price: Number(booking.price),
-      subtotal: Number(booking.price),
-      gst_rate: this._getGstRate('room', booking.price),
-      total: Number(booking.price),
+      description: `Room ${booking.room_number} (${booking.category}) × ${stayDays} night${stayDays > 1 ? 's' : ''}`,
+      quantity: stayDays,
+      unit_price: roomUnitPrice,
+      subtotal: roomSubtotal,
+      gst_rate: this._getGstRate('room', roomUnitPrice),
+      total: roomSubtotal,
     });
 
     // Kitchen
@@ -186,7 +201,6 @@ class CheckoutService {
 
     for (const item of kitchenItems) {
       const subtotal = Number(item.qty) * Number(item.price);
-
       lines.push({
         billing_id: billingId,
         type: 'kitchen',
@@ -199,7 +213,7 @@ class CheckoutService {
       });
     }
 
-    // Addons
+    // Addons (includes newly inserted ones from this checkout)
     const addons = await dbService.all(
       `SELECT name, price FROM booking_addons WHERE booking_id = ?`,
       [booking.id]
@@ -218,7 +232,7 @@ class CheckoutService {
       });
     }
 
-    // Insert lines
+    // Insert all line items
     for (const line of lines) {
       await dbService.run(
         `INSERT INTO invoices (

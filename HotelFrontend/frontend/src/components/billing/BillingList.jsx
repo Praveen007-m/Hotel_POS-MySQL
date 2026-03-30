@@ -202,16 +202,13 @@ const BillingList = () => {
       const res = await axios.get(`${API_BASE_URL}/api/billings/${bill.id}`);
       setSelectedBill(res.data);
 
-      // Replace the nights calculation with:
-      const checkIn = new Date(res.data.check_in);
-      const checkOut = new Date(res.data.check_out);
-      const timeDiff = checkOut.getTime() - checkIn.getTime();
-      const nights = timeDiff > 0 ? Math.ceil(timeDiff / (1000 * 60 * 60 * 24)) : 1;
-      const pricePerNight = Number(res.data.room_price || bill.room_price || 0);
-      const calculatedRoomTotal = pricePerNight * nights;
+      // FIXED: Use actual backend room lines total (matches BillingModal)
+      const roomCharges = (res.data.lines?.room ?? []).reduce(
+        (sum, item) => sum + Number(item?.total || 0), 0
+      );
 
       setForm({
-        room_price: calculatedRoomTotal,
+        room_price: roomCharges,
         add_ons: parseBillAddOns(res.data.add_ons),
         kitchen_orders: res.data.kitchen_orders || [],
         discount: 0,
