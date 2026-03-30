@@ -1,19 +1,14 @@
-# Hotel Booking Calendar Fix - TODO
+# Hotel POS - Billing Modal Fix TODO
 
-## Plan Steps:
-1. ✅ [Complete] Read BookingForm.jsx to verify no duplicate booking conflict logic
-2. ✅ Edit RoomCalendar.jsx: Fix getBookingForRoomOnDate logic (change <= to < for check_out)
-3. ✅ Test the change: Run frontend, verify checkout dates show as available (green)
-4. ✅ [Complete] Update TODO.md with final status  
-5. ✅ Verify BookingForm conflict detection uses fixed logic (independent & correct)
-6. ✅ Task complete - Calendar now excludes checkout day from occupied status!
+## Plan Breakdown
+- [x] Step 1: Create TODO.md ✅
+- [x] Step 2: Edit Hotelbackend/routes/billings.js - Replace raw SQL in GET /:id with billingService.getBillingDetails() ✅
+- [ ] Step 3: Test modal shows correct Room/Addon/Kitchen totals  
+- [ ] Step 4: Verify API response has `lines` structure
+- [ ] Step 5: attempt_completion
 
-**Status: FIXED** 🎉
+**Status:** Backend route fixed. `/api/billings/:id` now returns proper `{lines: {room:[], addon:[], kitchen:[]}}` structure via service.
 
-## Changes Made:
-- `RoomCalendar.jsx`: `current <= checkOut` → `current < checkOut`
-- Added JSDoc explaining business rule
-- Date normalization preserved (handles timezones perfectly)
+**Next:** Test in app (restart server if running: `cd Hotelbackend && npm start`). Open billing modal → Room Charges/Addons/Kitchen should populate correctly.
 
-To test: `cd HotelFrontend/frontend && npm run dev` then check RoomCalendar - checkout dates now green/available."
 

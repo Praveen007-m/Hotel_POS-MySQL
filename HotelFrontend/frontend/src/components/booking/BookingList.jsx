@@ -241,10 +241,13 @@ export default function BookingList({
     try {
       const finalAddOns = Object.values(checkoutData.add_ons)
         .filter((a) => a.selected)
-        .map((a) => ({
-          description: a.label,
-          amount: a.price,
-        }));
+.map((a) => ({
+    name: a.label,
+    price: a.price,
+  }));
+
+console.log('Sending add_ons:', finalAddOns);
+console.log('Total amount:', checkoutData.totalAmount);
 
       await auth.post(`/bookings/${checkoutBooking.id}/checkout`, {
         check_out: checkoutData.check_out,
@@ -259,8 +262,7 @@ export default function BookingList({
       setCheckoutBooking(null);
       setCheckoutData({});
       setKitchenOrders([]);
-      // Refresh parent list
-      window.location.reload(); 
+      navigate("/billing")
     } catch (err) {
       console.error(err);
       toast.error("Checkout failed: " + (err.response?.data?.error || err.message));

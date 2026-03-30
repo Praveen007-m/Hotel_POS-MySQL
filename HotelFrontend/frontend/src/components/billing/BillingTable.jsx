@@ -11,7 +11,7 @@ const formatBillDate = (dateStr) => {
 
 /* ================= THREE DOTS MENU ================= */
 const ActionsMenu = ({ bill, gstStatus, onOpen, onDelete, downloaded, onMarkDownloaded, onView }) => {
-  console.log(`ActionsMenu for #${bill.bill_id}: downloaded=${downloaded}`);
+console.log(`ActionsMenu for #${bill.id}: downloaded=${downloaded}`);
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef(null);
@@ -53,7 +53,7 @@ const ActionsMenu = ({ bill, gstStatus, onOpen, onDelete, downloaded, onMarkDown
   const handleGenerate = () => {
     setOpen(false);
     onOpen(bill, gstStatus);
-    onMarkDownloaded(bill.bill_id);
+    onMarkDownloaded(bill.id);
   };
 
   return (
@@ -113,8 +113,8 @@ const ActionsMenu = ({ bill, gstStatus, onOpen, onDelete, downloaded, onMarkDown
                   <button
                     onClick={() => {
                       setOpen(false);
-                      if (!window.confirm(`Delete bill #${bill.bill_id}?`)) return;
-                      onDelete(bill.bill_id);
+                      if (!window.confirm(`Delete bill #${bill.id}?`)) return;
+                      onDelete(bill.id);
                     }}
                     className="group flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors"
                   >
@@ -227,13 +227,13 @@ const BillingTable = ({ billings = [], onOpen, onDelete, rowGstStatus = {}, onGs
             {/* ── Body ── */}
             <tbody className="divide-y divide-gray-100">
               {billings.map((b, idx) => {
-                const isHovered = hoveredRow === b.bill_id;
+                const isHovered = hoveredRow === b.id;
                 const isDownloaded = !!b.is_downloaded;
 
                 return (
                   <tr
-                    key={b.bill_id}
-                    onMouseEnter={() => setHoveredRow(b.bill_id)}
+                    key={b.id}
+                    onMouseEnter={() => setHoveredRow(b.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                     className={`transition-colors duration-150 ${isHovered
                       ? "bg-indigo-50/50"
@@ -246,7 +246,7 @@ const BillingTable = ({ billings = [], onOpen, onDelete, rowGstStatus = {}, onGs
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-1">
                         <span className="inline-flex items-center text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md tracking-wide font-mono w-fit">
-                          #{b.bill_id}
+                          #{b.id}
                         </span>
                         {isDownloaded && (
                           <div className="flex items-center gap-1.5">
@@ -353,8 +353,8 @@ const BillingTable = ({ billings = [], onOpen, onDelete, rowGstStatus = {}, onGs
                     {/* GST */}
                     <td className="px-3 py-3">
                       <GstSelect
-                        value={rowGstStatus[b.bill_id] || "With GST"}
-                        onChange={(e) => onGstStatusChange(b.bill_id, e.target.value)}
+                        value={rowGstStatus[b.id] || "With GST"}
+                        onChange={(e) => onGstStatusChange(b.id, e.target.value)}
                       />
                     </td>
 
@@ -362,7 +362,7 @@ const BillingTable = ({ billings = [], onOpen, onDelete, rowGstStatus = {}, onGs
                     <td className="px-3 py-3">
                       <ActionsMenu
                         bill={b}
-                        gstStatus={rowGstStatus[b.bill_id] || "With GST"}
+                        gstStatus={rowGstStatus[b.id] || "With GST"}
                         onOpen={onOpen}
                         onDelete={onDelete}
                         downloaded={isDownloaded}

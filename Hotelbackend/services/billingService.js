@@ -30,8 +30,16 @@ class BillingService {
       LIMIT ? OFFSET ?
     `, params);
 
-    const total = await dbService.get('SELECT COUNT(*) as count FROM billings b ${whereClause}', 
-      search ? [`%${search}%`] : []);
+const countParams = search 
+  ? [`%${search}%`, `%${search}%`, `%${search}%`] 
+  : [];
+
+const total = await dbService.get(`
+  SELECT COUNT(DISTINCT b.id) as count
+  FROM billings b
+  LEFT JOIN customers c ON b.customer_id = c.id
+  ${whereClause}
+`, countParams);
 
     return {
       billings,

@@ -84,6 +84,7 @@ exports.generateInvoicePDF = async (req, res) => {
     });
 
     // Set response headers
+    const billId = billing_id;
     const filename = `Hotel_Invoice_${billId}_${Date.now()}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -341,18 +342,26 @@ exports.generateInvoicePDF = async (req, res) => {
 
     // Add-ons (from booking_addons or JSON)
     // Line items from new invoices table (grouped)
-    const allLines = invoiceData.lines;
+    // const allLines = invoiceData.lines;
+    // const roomLines = allLines.room || [];
+    // const kitchenLines = allLines.kitchen || [];
+    // const addonLines = allLines.addon || [];
+    // const gstLines = allLines.gst || []; 
+    //     `, [selectedBill.booking_db_id], (err, rows) => {
+    //       if (!err && rows.length > 0) {
+    //         allAddons = rows.map(row => ({ name: row.name, price: row.price, qty: 1 }));
+    //       }
+    //     });
+    //   }
+    // }
+
+    const allLines = invoiceData.lines || {};
     const roomLines = allLines.room || [];
     const kitchenLines = allLines.kitchen || [];
     const addonLines = allLines.addon || [];
-    const gstLines = allLines.gst || []; 
-        `, [selectedBill.booking_db_id], (err, rows) => {
-          if (!err && rows.length > 0) {
-            allAddons = rows.map(row => ({ name: row.name, price: row.price, qty: 1 }));
-          }
-        });
-      }
-    }
+    const gstLines = allLines.gst || [];
+
+    let allAddons = addonLines; // use from service directly
 
     if (Array.isArray(allAddons) && allAddons.length > 0) {
       doc.fontSize(10).font("Helvetica-Bold").fillColor("#333").text("ADD-ONS", col1 + 10, tableY);

@@ -36,86 +36,20 @@ router.get("/", async (req, res) => {
    GET SINGLE BILL + DETAILS
    URL: /api/billings/:id
 ================================ */
-router.get("/:id", (req, res) => {
+router.get("/:id", async (req, res) => {
   const billId = req.params.id;
-
-  db.get(
-    `
-    SELECT 
-      b.id AS bill_id,
-      b.*,
-      b.gst_number,
-      c.name AS customer_name,
-      c.address AS customer_address,
-      r.category AS room_category,
-      r.room_number,
-      bk.people_count AS pax,
-      bk.created_by_name AS check_in_user
-    FROM billings b
-    JOIN customers c ON b.customer_id = c.id
-    LEFT JOIN rooms r ON b.room_id = r.id
-    LEFT JOIN bookings bk ON b.booking_id = bk.booking_id
-    WHERE b.id = ?
-    `,
-    [billId],
-    (err, bill) => {
-      if (err) {
-        console.error("❌ BILL QUERY FAILED:", err);
-        return res.status(500).json({ error: err.message });
-      }
-
-      if (!bill) {
-        return res.status(404).json({ error: "Bill not found" });
-      }
-
-      console.log("✅ BILL FOUND:", bill.id);
-
-      /* ===============================
-        ADD-ONS & KITCHEN ORDERS (FROM JSON)
-      ================================ */
-      let roomAddOns = [];
-      let kitchenOrders = [];
-
-      try {
-        if (bill.add_ons) {
-          const parsedAddOns =
-            typeof bill.add_ons === "string"
-              ? JSON.parse(bill.add_ons)
-              : bill.add_ons;
-          roomAddOns = Array.isArray(parsedAddOns)
-            ? parsedAddOns.map((a) => ({
-                name: a.description || a.name || "Add-on",
-                qty: a.qty || 1,
-                price: Number(a.amount || a.price) || 0,
-              }))
-            : [];
-        }
-
-        if (bill.kitchen_orders) {
-          const parsedKitchen =
-            typeof bill.kitchen_orders === "string"
-              ? JSON.parse(bill.kitchen_orders)
-              : bill.kitchen_orders;
-          kitchenOrders = Array.isArray(parsedKitchen)
-            ? parsedKitchen.map((k) => ({
-                item_name: k.item_name,
-                quantity: k.quantity,
-                price: k.item_price || k.price,
-              }))
-            : [];
-        }
-      } catch (e) {
-        console.error("❌ JSON PARSE FAILED:", e);
-      }
-
-      res.json({
-        ...bill,
-        bill_id: bill.bill_id || bill.id,
-        add_ons: roomAddOns,
-        kitchen_orders: kitchenOrders,
-      });
-    },
-  );
+  
+  try {
+    const billingService = require('../services/billingService');
+    const bill = await billingService.getBillingDetails(billId);
+    res.json(bill);
+  } catch (error) {
+    console.error("❌ GET BILLING DETAILS FAILED:", error);
+    if (error.message === 'Billing not found') {
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+    res.status(500).json({ error: error.message });
+  }
 });
 
 /* ===============================

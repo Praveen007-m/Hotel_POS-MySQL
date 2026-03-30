@@ -35,15 +35,31 @@ const BillingList = () => {
     kitchen_orders: [],
     discount: 0,
   });
+  const [hoveredRow, setHoveredRow] = useState(null);
+
+  const onGstChange = (included) => {
+  setGstIncluded(included);
+  };
 
   /* ================= FETCH BILLINGS ================= */
   const fetchBills = async () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API_BASE_URL}/api/billings`);
-      setBillings(res.data || []);
-      setFilteredBillings(res.data || []);
+
+      const billsArray = res.data?.billings || res.data || [];
+      if (!Array.isArray(billsArray)) {
+        console.error("Invalid billings data:", billsArray);
+        toast.error("Invalid response format");
+        setBillings([]);
+        setFilteredBillings([]);
+        return;
+      }
+
+      setBillings(billsArray);
+      setFilteredBillings(billsArray);
       setCurrentPage(1);
+
     } catch (err) {
       console.error(err);
       toast.error("Failed to fetch bills");
@@ -74,18 +90,20 @@ const BillingList = () => {
 
   /* ================= DELETE BILL ================= */
   const handleDeleteBill = async (billId) => {
+    if (!billId) {
+      toast.error("Invalid bill ID");
+      return;
+    }
+
     try {
-      const token = localStorage.getItem("token"); // or sessionStorage
-
+      const token = localStorage.getItem("token");
       await axios.delete(`${API_BASE_URL}/api/billings/${billId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`, // ✅ REQUIRED
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-
       // Remove deleted bill from UI
-      setBillings((prev) => prev.filter((b) => b.bill_id !== billId));
-      setFilteredBillings((prev) => prev.filter((b) => b.bill_id !== billId));
+      setBillings((prev) => prev.filter((b) => b.id !== billId));
+      setFilteredBillings((prev) => prev.filter((b) => b.id !== billId));
+      toast.success("Bill deleted");
     } catch (err) {
       console.error("Failed to delete bill", err);
       toast.error("Failed to delete bill");
@@ -94,10 +112,15 @@ const BillingList = () => {
 
   /* ================= MARK BILL AS DOWNLOADED ================= */
   const handleMarkDownloaded = async (billId, gstNumber) => {
-    // Optimistically update UI; also save gstNumber locally if passed
+    if (!billId) {
+      toast.error("Invalid bill ID");
+      return;
+    }
+
+    // Optimistically update UI
     const updateDownloaded = (list) =>
       list.map((b) =>
-        b.bill_id === billId
+        b.id === billId
           ? { ...b, is_downloaded: 1, gst_number: gstNumber || b.gst_number }
           : b,
       );
@@ -108,17 +131,15 @@ const BillingList = () => {
       const token = localStorage.getItem("token");
       const body = {};
       if (gstNumber !== undefined) body.gst_number = gstNumber;
-      await axios.patch(
-        `${API_BASE_URL}/api/billings/${billId}/downloaded`,
-        body,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
+      await axios.patch(`${API_BASE_URL}/api/billings/${billId}/downloaded`, body, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      toast.success("Bill marked as downloaded");
     } catch (err) {
+      // Revert optimistic update on error
+      fetchBills();
       console.error("Failed to mark bill as downloaded", err);
+      toast.error("Failed to update bill status");
     }
   };
 
@@ -172,33 +193,25 @@ const BillingList = () => {
   };
 
   const openModal = async (bill, gstStatus, directView = false) => {
-    try {
-      const res = await axios.get(
-        `${API_BASE_URL}/api/billings/${bill.bill_id}`, // bill_id is DB id → correct here
-      );
+    if (!bill?.id) {
+      toast.error("Invalid bill");
+      return;
+    }
 
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/billings/${bill.id}`);
       setSelectedBill(res.data);
 
+      // Replace the nights calculation with:
       const checkIn = new Date(res.data.check_in);
       const checkOut = new Date(res.data.check_out);
-
-      // Set time to 00:00 to avoid timezone issues
-      checkIn.setHours(0, 0, 0, 0);
-      checkOut.setHours(0, 0, 0, 0);
-
-      // Calculate nights properly
       const timeDiff = checkOut.getTime() - checkIn.getTime();
-      const nights =
-        timeDiff > 0 ? Math.ceil(timeDiff / (1000 * 60 * 60 * 24)) : 1;
-
-      // Get per-night price from backend
-      const pricePerNight = Number(res.data.room_price || 0);
-
-      // Multiply correctly
+      const nights = timeDiff > 0 ? Math.ceil(timeDiff / (1000 * 60 * 60 * 24)) : 1;
+      const pricePerNight = Number(res.data.room_price || bill.room_price || 0);
       const calculatedRoomTotal = pricePerNight * nights;
 
       setForm({
-        room_price: calculatedRoomTotal, // ✅ FIXED
+        room_price: calculatedRoomTotal,
         add_ons: parseBillAddOns(res.data.add_ons),
         kitchen_orders: res.data.kitchen_orders || [],
         discount: 0,
@@ -206,7 +219,7 @@ const BillingList = () => {
 
       setRowGstStatus((prev) => ({
         ...prev,
-        [bill.bill_id]: gstStatus,
+        [bill.id]: gstStatus,
       }));
       setGstIncluded(gstStatus === "With GST");
       setModalOpen(true);
@@ -286,9 +299,10 @@ const BillingList = () => {
             onOpen={openModal}
             onDelete={handleDeleteBill}
             rowGstStatus={rowGstStatus}
-            onGstStatusChange={(billId, status) =>
-              setRowGstStatus((prev) => ({ ...prev, [billId]: status }))
-            }
+        onGstStatusChange={(billId, status) =>
+          setRowGstStatus((prev) => ({ ...prev, [billId]: status }))
+        }
+        hoveredRow={hoveredRow}
             onMarkDownloaded={handleMarkDownloaded}
             onView={handleViewPdf}
           />
@@ -316,14 +330,7 @@ const BillingList = () => {
         setForm={setForm}
         gstIncluded={gstIncluded}
         setGstIncluded={setGstIncluded}
-        onGstChange={(status) => {
-          if (selectedBill) {
-            setRowGstStatus((prev) => ({
-              ...prev,
-              [selectedBill.bill_id]: status,
-            }));
-          }
-        }}
+        onGstChange={onGstChange}
         availableAddOns={availableAddOns}
         menuItems={menuItems}
         onDownload={handleMarkDownloaded}
