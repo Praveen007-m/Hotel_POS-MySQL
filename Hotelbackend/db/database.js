@@ -47,20 +47,10 @@ db.serialize(() => {
   db.run("PRAGMA synchronous = NORMAL;");
   db.run("PRAGMA busy_timeout = 5000;");
 
-  // ✅ Migration (safe)
-  db.run(
-    "ALTER TABLE billings ADD COLUMN is_downloaded INTEGER DEFAULT 0",
-    (err) => {
-      if (err && !err.message.includes("duplicate column")) {
-        console.error("❌ Migration error:", err.message);
-      } else {
-        console.log("✅ Migration checked");
-      }
-    }
-  );
+  // ✅ Migration moved to server.js initDatabase() — runs after schema is created
 });
 
-// ✅ GLOBAL ERROR LOGGING (VERY IMPORTANT)
+// ✅ GLOBAL ERROR LOGGING
 db.on("error", (err) => {
   console.error("💥 SQLite Runtime Error:", err);
 });

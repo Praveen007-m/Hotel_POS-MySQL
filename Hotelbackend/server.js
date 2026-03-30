@@ -69,6 +69,30 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // ================= DATABASE INIT =================
 const schemaPath = path.join(__dirname, "db/schema.sql");
 
+// ================= MIGRATIONS =================
+// Add any new ALTER TABLE migrations here.
+// They are safe to run every time — duplicate column errors are ignored.
+const migrations = [
+  "ALTER TABLE billings ADD COLUMN is_downloaded INTEGER DEFAULT 0",
+  // Add future migrations below:
+  // "ALTER TABLE bookings ADD COLUMN some_new_col TEXT DEFAULT ''",
+];
+
+async function runMigrations() {
+  for (const sql of migrations) {
+    await new Promise((resolve) => {
+      db.run(sql, (err) => {
+        if (err && !err.message.includes("duplicate column")) {
+          console.error("❌ Migration error:", err.message);
+        } else {
+          console.log("✅ Migration checked:", sql.substring(0, 60) + "...");
+        }
+        resolve(); // always resolve — migration errors are non-fatal
+      });
+    });
+  }
+}
+
 async function initDatabase() {
   try {
     if (!fs.existsSync(schemaPath)) {
@@ -84,6 +108,7 @@ async function initDatabase() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
+    // ✅ Step 1: Run all CREATE TABLE IF NOT EXISTS from schema.sql
     for (const stmt of statements) {
       await new Promise((resolve, reject) => {
         db.run(stmt, (err) => {
@@ -104,6 +129,11 @@ async function initDatabase() {
         });
       });
     }
+
+    console.log("✅ Schema applied successfully");
+
+    // ✅ Step 2: Run migrations AFTER schema is ready
+    await runMigrations();
 
     console.log("✅ Database initialized successfully");
     isDbReady = true;
