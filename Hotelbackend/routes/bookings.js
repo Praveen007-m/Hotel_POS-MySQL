@@ -27,6 +27,26 @@ const allQuery = (query, params = []) =>
     });
   });
 
+const resolveRoom = async (roomIdInput) => {
+  const numericRoomId = Number(roomIdInput);
+
+  if (Number.isInteger(numericRoomId) && numericRoomId > 0) {
+    const roomById = await getQuery(
+      "SELECT id, room_number, capacity FROM rooms WHERE id = ?",
+      [numericRoomId]
+    );
+    if (roomById) return roomById;
+  }
+
+  const roomNumberCandidate = String(roomIdInput || "").trim();
+  if (!roomNumberCandidate) return null;
+
+  return getQuery(
+    "SELECT id, room_number, capacity FROM rooms WHERE room_number = ?",
+    [roomNumberCandidate]
+  );
+};
+
 router.get("/calendar", requireAuth, async (req, res) => {
   try {
     const query = `
@@ -159,9 +179,7 @@ router.post("/", requireAuth, async (req, res) => {
     const checkInStr = check_in || new Date().toISOString().slice(0, 19);
     const checkOutStr = check_out || null;
 
-    const room = await getQuery("SELECT id, capacity FROM rooms WHERE id = ?", [
-      room_id,
-    ]);
+    const room = await resolveRoom(room_id);
     if (!room) {
       console.warn("Booking rejected because room was not found:", {
         room_id,
@@ -171,6 +189,20 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Invalid room selected" });
     }
 
+    const resolvedRoomId = Number(room.id);
+
+    const customer = await getQuery("SELECT id FROM customers WHERE id = ?", [
+      Number(customer_id),
+    ]);
+    if (!customer) {
+      console.warn("Booking rejected because customer was not found:", {
+        room_id: resolvedRoomId,
+        booking_id,
+        customer_id,
+      });
+      return res.status(400).json({ error: "Invalid customer selected" });
+    }
+
     const availability = await getQuery(
       `SELECT COUNT(*) as conflictCount
        FROM bookings
@@ -178,7 +210,7 @@ router.post("/", requireAuth, async (req, res) => {
          AND status IN ('Confirmed', 'Checked-in')
          AND check_in < ?
          AND (check_out IS NULL OR check_out > ?)`,
-      [room_id, checkOutStr || checkInStr, checkInStr]
+      [resolvedRoomId, checkOutStr || checkInStr, checkInStr]
     );
 
     if (availability.conflictCount > 0) {
@@ -198,7 +230,7 @@ router.post("/", requireAuth, async (req, res) => {
       [
         booking_id,
         Number(customer_id),
-        Number(room_id),
+        resolvedRoomId,
         checkInStr,
         checkOutStr,
         bookingStatus,
@@ -215,7 +247,7 @@ router.post("/", requireAuth, async (req, res) => {
     const roomStatus = bookingStatus === "Checked-in" ? "Occupied" : "Booked";
     await runQuery("UPDATE rooms SET status = ? WHERE id = ?", [
       roomStatus,
-      room_id,
+      resolvedRoomId,
     ]);
 
     console.log("✅ Booking created:", booking_id, "by", created_by_name);

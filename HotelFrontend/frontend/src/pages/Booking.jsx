@@ -109,7 +109,7 @@ export default function Booking() {
       fetchBookings();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to save booking");
+      toast.error(err?.response?.data?.error || "Failed to save booking");
     }
   };
 

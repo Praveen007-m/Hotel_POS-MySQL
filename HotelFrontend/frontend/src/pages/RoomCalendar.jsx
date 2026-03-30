@@ -5,6 +5,7 @@ import { API_BASE_URL } from "../config";
 import Container from "../components/layout/Container";
 import RoomDayModal from "../components/rooms/RoomDayModal";
 import BookingForm from "../components/booking/BookingForm";
+import { toast } from "react-toastify";
 
 import {
   ChevronLeft,
@@ -426,6 +427,9 @@ const getBookingForRoomOnDate = (room, dateString) => {
               fetchCalendarData();
             } catch (error) {
               console.error("Booking failed:", error);
+              toast.error(
+                error?.response?.data?.error || "Failed to save booking"
+              );
             }
           }}
           onCancel={() => setShowBookingModal(false)}
