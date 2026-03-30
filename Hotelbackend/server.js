@@ -7,7 +7,7 @@ require("dotenv").config();
 
 const db = require("./db/database");
 
-// ================= GLOBAL CRASH HANDLER (VERY IMPORTANT) =================
+// ================= GLOBAL CRASH HANDLER =================
 process.on("uncaughtException", (err) => {
   console.error("💥 Uncaught Exception:", err);
 });
@@ -35,7 +35,10 @@ const invoiceRoutes = require("./routes/invoice");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ================= CORS (STRICT + SAFE) =================
+// ================= DB READY FLAG =================
+let isDbReady = false;
+
+// ================= CORS =================
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -49,7 +52,7 @@ app.use(
       }
 
       console.log("❌ CORS blocked:", origin);
-      return callback(null, false); // ❗ don't throw error (prevents crash)
+      return callback(null, false);
     },
     credentials: true,
   })
@@ -66,27 +69,66 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // ================= DATABASE INIT =================
 const schemaPath = path.join(__dirname, "db/schema.sql");
 
-try {
-  if (fs.existsSync(schemaPath)) {
+async function initDatabase() {
+  try {
+    if (!fs.existsSync(schemaPath)) {
+      throw new Error("schema.sql not found");
+    }
+
+    console.log("📁 Initializing DB...");
+
     const schema = fs.readFileSync(schemaPath, "utf-8");
 
-    db.exec(schema, (err) => {
-      if (err) {
-        console.error("❌ DB Init Error:", err.message);
-      } else {
-        console.log("✅ Database ready");
-      }
-    });
-  } else {
-    console.warn("⚠️ schema.sql not found");
+    const statements = schema
+      .split(";")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    for (const stmt of statements) {
+      await new Promise((resolve, reject) => {
+        db.run(stmt, (err) => {
+          if (err) {
+            // Ignore safe errors
+            if (
+              err.message.includes("already exists") ||
+              err.message.includes("duplicate column")
+            ) {
+              console.log("⚠️ Skipping:", err.message);
+              return resolve();
+            }
+
+            console.error("❌ SQL Error:", err.message);
+            return reject(err);
+          }
+          resolve();
+        });
+      });
+    }
+
+    console.log("✅ Database initialized successfully");
+    isDbReady = true;
+  } catch (err) {
+    console.error("❌ DB Init Error:", err.message);
   }
-} catch (err) {
-  console.error("💥 DB INIT CRASH:", err);
 }
+
+// ================= DB READY MIDDLEWARE =================
+app.use((req, res, next) => {
+  if (!isDbReady) {
+    return res.status(503).json({
+      success: false,
+      message: "Server initializing, please try again...",
+    });
+  }
+  next();
+});
 
 // ================= HEALTH CHECK =================
 app.get("/", (req, res) => {
-  res.status(200).send("🚀 Hotel backend API is running!");
+  res.json({
+    status: "ok",
+    db: isDbReady ? "ready" : "initializing",
+  });
 });
 
 // ================= ROUTES =================
@@ -120,6 +162,8 @@ app.use((err, req, res, next) => {
 });
 
 // ================= START SERVER =================
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server running on port ${PORT}`);
+initDatabase().then(() => {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`✅ Server running on port ${PORT}`);
+  });
 });
