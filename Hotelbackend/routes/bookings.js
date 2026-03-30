@@ -115,7 +115,7 @@ router.post("/", requireAuth, async (req, res) => {
     if (!booking_id)  missing.push("booking_id");
     if (!customer_id) missing.push("customer_id");
     if (!room_id)     missing.push("room_id");
-    if (!price)       missing.push("price");
+    // if (!price)       missing.push("price");
 
     if (missing.length > 0) {
       console.warn("❌ Missing fields:", missing);
@@ -156,10 +156,21 @@ router.post("/", requireAuth, async (req, res) => {
     const checkOutStr = check_out || null;
 
     // ── Room existence check ───────────────────────────────────────────────
-    const room = await getQuery("SELECT id, capacity FROM rooms WHERE id = ?", [room_id]);
-    if (!room) {
-      return res.status(400).json({ error: "Invalid room selected" });
-    }
+    // const room = await getQuery("SELECT id, capacity FROM rooms WHERE id = ?", [room_id]);
+    // if (!room) {
+    //   return res.status(400).json({ error: "Invalid room selected" });
+    // }
+    const room = await getQuery(
+  "SELECT id, capacity, price_per_night FROM rooms WHERE id = ?",
+    [room_id]
+  );
+
+  if (!room) {
+    return res.status(400).json({ error: "Invalid room selected" });
+  }
+
+  // ✅ Always calculate price from DB
+  const finalPrice = Number(room.price_per_night);
 
     // ── Availability conflict check ────────────────────────────────────────
     const availability = await getQuery(
