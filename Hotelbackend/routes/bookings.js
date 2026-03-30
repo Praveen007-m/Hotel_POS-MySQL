@@ -33,6 +33,26 @@ const allQuery = (query, params = []) =>
 // ----------------- Routes -----------------
 // IMPORTANT: Specific routes BEFORE generic /:id routes
 
+// DEBUG - CHECK ROOM BY ID
+router.get("/debug/room/:roomId", requireAuth, (req, res) => {
+  db.get(
+    "SELECT id, room_number, category, status, price_per_night, capacity FROM rooms WHERE id = ?",
+    [req.params.roomId],
+    (err, row) => {
+      if (err) {
+        console.error("Debug room lookup error:", err.message);
+        return res.status(500).json({ error: err.message });
+      }
+
+      res.json({
+        requested_room_id: req.params.roomId,
+        found: Boolean(row),
+        room: row || null,
+      });
+    }
+  );
+});
+
 // GET - BOOKINGS FOR CALENDAR VIEW
 router.get("/calendar", requireAuth, async (req, res) => {
   try {
