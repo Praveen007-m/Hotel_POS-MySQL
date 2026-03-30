@@ -3,6 +3,7 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const cookieParser = require("cookie-parser");
+const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const db = require("./db/database");
@@ -47,7 +48,7 @@ app.use(
       if (
         origin.includes("netlify.app") ||
         origin.includes("localhost") ||
-        origin.includes("hotel-poss.netlify.app") // ✅ add your exact domain
+        origin.includes("railway.app")
       ) {
         return callback(null, true);
       }
@@ -56,8 +57,13 @@ app.use(
       return callback(null, false);
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// ✅ Handle preflight OPTIONS requests
+app.options("*", cors());
 
 // ================= MIDDLEWARE =================
 app.use(express.json());
@@ -71,12 +77,9 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 const schemaPath = path.join(__dirname, "db/schema.sql");
 
 // ================= MIGRATIONS =================
-// Add any new ALTER TABLE migrations here.
-// They are safe to run every time — duplicate column errors are ignored.
+// Add new ALTER TABLE statements here — safe to run every deploy
 const migrations = [
   "ALTER TABLE billings ADD COLUMN is_downloaded INTEGER DEFAULT 0",
-  // Add future migrations below:
-  // "ALTER TABLE bookings ADD COLUMN some_new_col TEXT DEFAULT ''",
 ];
 
 async function runMigrations() {
@@ -88,12 +91,55 @@ async function runMigrations() {
         } else {
           console.log("✅ Migration checked:", sql.substring(0, 60) + "...");
         }
-        resolve(); // always resolve — migration errors are non-fatal
+        resolve(); // always resolve — non-fatal
       });
     });
   }
 }
 
+// ================= SEED ADMIN USER =================
+// On every fresh Railway deploy, /tmp/hotel.db is empty.
+// This seeds the admin user so you can always log in.
+async function seedAdminUser() {
+  return new Promise((resolve) => {
+    const email = process.env.ADMIN_EMAIL || "admin@hotel.com";
+    const password = process.env.ADMIN_PASSWORD || "Admin@2025#";
+    const name = process.env.ADMIN_NAME || "Admin";
+
+    db.get("SELECT id FROM users WHERE email = ?", [email], async (err, row) => {
+      if (err) {
+        console.error("❌ Seed check error:", err.message);
+        return resolve();
+      }
+
+      if (row) {
+        console.log("✅ Admin user already exists");
+        return resolve();
+      }
+
+      try {
+        const hashed = await bcrypt.hash(password, 10);
+        db.run(
+          "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
+          [name, email, hashed, "admin"],
+          (insertErr) => {
+            if (insertErr) {
+              console.error("❌ Seed admin error:", insertErr.message);
+            } else {
+              console.log("✅ Admin user seeded successfully:", email);
+            }
+            resolve();
+          }
+        );
+      } catch (bcryptErr) {
+        console.error("❌ bcrypt error:", bcryptErr.message);
+        resolve();
+      }
+    });
+  });
+}
+
+// ================= INIT DATABASE =================
 async function initDatabase() {
   try {
     if (!fs.existsSync(schemaPath)) {
@@ -109,12 +155,11 @@ async function initDatabase() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
-    // ✅ Step 1: Run all CREATE TABLE IF NOT EXISTS from schema.sql
+    // Step 1: Apply schema (all CREATE TABLE IF NOT EXISTS)
     for (const stmt of statements) {
       await new Promise((resolve, reject) => {
         db.run(stmt, (err) => {
           if (err) {
-            // Ignore safe errors
             if (
               err.message.includes("already exists") ||
               err.message.includes("duplicate column")
@@ -122,7 +167,6 @@ async function initDatabase() {
               console.log("⚠️ Skipping:", err.message);
               return resolve();
             }
-
             console.error("❌ SQL Error:", err.message);
             return reject(err);
           }
@@ -133,8 +177,11 @@ async function initDatabase() {
 
     console.log("✅ Schema applied successfully");
 
-    // ✅ Step 2: Run migrations AFTER schema is ready
+    // Step 2: Run migrations AFTER schema exists
     await runMigrations();
+
+    // Step 3: Seed admin user AFTER tables exist
+    await seedAdminUser();
 
     console.log("✅ Database initialized successfully");
     isDbReady = true;
@@ -185,7 +232,6 @@ app.use((req, res) => {
 // ================= ERROR HANDLER =================
 app.use((err, req, res, next) => {
   console.error("🔥 Server Error:", err.stack || err.message);
-
   res.status(500).json({
     success: false,
     message: err.message || "Internal Server Error",
