@@ -7,9 +7,8 @@ const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const db = require("./db/database");
-const { runMigrations } = require("./db/migrate"); // ✅ Import migrations
+const { runMigrations } = require("./db/migrate");
 
-// ================= GLOBAL CRASH HANDLER =================
 process.on("uncaughtException", (err) => {
   console.error("💥 Uncaught Exception:", err);
 });
@@ -18,7 +17,6 @@ process.on("unhandledRejection", (err) => {
   console.error("💥 Unhandled Rejection:", err);
 });
 
-// ================= ROUTES =================
 const authRoutes = require("./routes/auth");
 const staffRoutes = require("./routes/staff.routes");
 const billingRoutes = require("./routes/billings");
@@ -33,16 +31,12 @@ const gstRoutes = require("./routes/gst.routes");
 const restaurantRoutes = require("./routes/restaurant.routes");
 const invoiceRoutes = require("./routes/invoice");
 
-// ================= APP =================
 const app = express();
 const PORT = process.env.PORT || 5000;
-
-// ================= DB READY FLAG =================
 let isDbReady = false;
 
-// ================= CORS CONFIG =================
 const corsOptions = {
-  origin: function (origin, callback) {
+  origin(origin, callback) {
     if (!origin) return callback(null, true);
 
     if (
@@ -61,21 +55,115 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-// ✅ Apply CORS — must be before everything else
 app.use(cors(corsOptions));
-
-// ================= MIDDLEWARE =================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
-// ================= STATIC FILES =================
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ================= DATABASE PATH =================
 const schemaPath = path.join(__dirname, "db/schema.sql");
+const requiredTables = ["users", "staff", "rooms", "customers", "bookings"];
+const requiredBookingColumns = [
+  "booking_id",
+  "advance_paid",
+  "add_ons",
+  "people_count",
+  "created_by_id",
+  "created_by_name",
+  "created_by_role",
+];
+const requiredStaffColumns = ["phone", "status"];
+const requiredUserColumns = ["staff_id"];
 
-// ================= SEED ADMIN USER =================
+function getQuery(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) return reject(err);
+      resolve(row);
+    });
+  });
+}
+
+function allQuery(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows);
+    });
+  });
+}
+
+function execQuery(sql) {
+  return new Promise((resolve, reject) => {
+    db.exec(sql, (err) => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
+}
+
+async function logTableCounts() {
+  for (const table of requiredTables) {
+    const row = await getQuery(`SELECT COUNT(*) AS count FROM ${table}`);
+    console.log(`[db] ${table} row count:`, row.count);
+  }
+}
+
+async function assertTableExists(tableName) {
+  const row = await getQuery(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    [tableName]
+  );
+
+  if (!row) {
+    throw new Error(`Required table missing: ${tableName}`);
+  }
+}
+
+async function assertColumns(tableName, expectedColumns) {
+  const rows = await allQuery(`PRAGMA table_info(${tableName})`);
+  const actualColumns = new Set(rows.map((row) => row.name));
+  const missingColumns = expectedColumns.filter(
+    (column) => !actualColumns.has(column)
+  );
+
+  if (missingColumns.length > 0) {
+    throw new Error(
+      `Missing columns in ${tableName}: ${missingColumns.join(", ")}`
+    );
+  }
+}
+
+async function verifyDatabaseState() {
+  console.log("[db] Verifying schema in:", db.dbPath);
+
+  for (const table of requiredTables) {
+    await assertTableExists(table);
+  }
+
+  await assertColumns("bookings", requiredBookingColumns);
+  await assertColumns("staff", requiredStaffColumns);
+  await assertColumns("users", requiredUserColumns);
+
+  const tables = await allQuery(
+    "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+  );
+  console.log("[db] Tables:", tables.map((row) => row.name).join(", "));
+
+  await logTableCounts();
+
+  const roomsCount = await getQuery("SELECT COUNT(*) AS count FROM rooms");
+  const customersCount = await getQuery(
+    "SELECT COUNT(*) AS count FROM customers"
+  );
+
+  if (roomsCount.count === 0 || customersCount.count === 0) {
+    console.warn(
+      "[db] Production DB has schema but no base business data. Booking creation will fail until rooms and customers exist."
+    );
+  }
+}
+
 async function seedAdminUser() {
   return new Promise((resolve) => {
     const email = process.env.ADMIN_EMAIL || "admin@hotel.com";
@@ -115,60 +203,30 @@ async function seedAdminUser() {
   });
 }
 
-// ================= INIT DATABASE =================
 async function initDatabase() {
   try {
     if (!fs.existsSync(schemaPath)) {
-      throw new Error("schema.sql not found at: " + schemaPath);
+      throw new Error(`schema.sql not found at: ${schemaPath}`);
     }
 
     console.log("📁 Initializing database...");
 
-    // ── Step 1: Apply base schema ──────────────────────────────────────────
     const schema = fs.readFileSync(schemaPath, "utf-8");
-
-    const statements = schema
-      .split(";")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    for (const stmt of statements) {
-      await new Promise((resolve, reject) => {
-        db.run(stmt, (err) => {
-          if (err) {
-            // Non-fatal: table or index already exists
-            if (
-              err.message.includes("already exists") ||
-              err.message.includes("duplicate column")
-            ) {
-              return resolve();
-            }
-            console.error("❌ Schema error:", err.message);
-            console.error("   SQL:", stmt.substring(0, 120));
-            return reject(err);
-          }
-          resolve();
-        });
-      });
-    }
-
+    await execQuery(schema);
     console.log("✅ Base schema applied");
 
-    // ── Step 2: Run migrations (adds missing columns to existing tables) ──
-    await runMigrations(); // ✅ uses db/migrate.js
-
-    // ── Step 3: Seed default admin user ───────────────────────────────────
+    await runMigrations();
     await seedAdminUser();
+    await verifyDatabaseState();
 
     console.log("✅ Database initialized successfully");
     isDbReady = true;
   } catch (err) {
     console.error("❌ DB Init Error:", err.message);
-    // isDbReady stays false → 503 middleware handles requests gracefully
+    console.error("❌ DB Init Path:", db.dbPath);
   }
 }
 
-// ================= DB READY MIDDLEWARE =================
 app.use((req, res, next) => {
   if (!isDbReady) {
     return res.status(503).json({
@@ -179,15 +237,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// ================= HEALTH CHECK =================
 app.get("/", (req, res) => {
   res.json({
     status: "ok",
     db: isDbReady ? "ready" : "initializing",
+    dbPath: db.dbPath,
   });
 });
 
-// ================= ROUTES =================
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/customers", customerRoutes);
@@ -202,12 +259,10 @@ app.use("/api/gst", gstRoutes);
 app.use("/api/restaurant", restaurantRoutes);
 app.use("/api/invoice", invoiceRoutes);
 
-// ================= 404 HANDLER =================
 app.use((req, res) => {
   res.status(404).json({ error: "Route not found" });
 });
 
-// ================= ERROR HANDLER =================
 app.use((err, req, res, next) => {
   console.error("🔥 Server Error:", err.stack || err.message);
   res.status(500).json({
@@ -216,7 +271,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ================= START SERVER =================
 initDatabase().then(() => {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Server running on port ${PORT}`);

@@ -3,7 +3,6 @@ const router = express.Router();
 const db = require("../db/database");
 const { requireAuth } = require("../middleware/auth");
 
-// Promisified db.run
 const runQuery = (query, params = []) =>
   new Promise((resolve, reject) => {
     db.run(query, params, function (err) {
@@ -12,7 +11,6 @@ const runQuery = (query, params = []) =>
     });
   });
 
-// Promisified db.get
 const getQuery = (query, params = []) =>
   new Promise((resolve, reject) => {
     db.get(query, params, (err, row) => {
@@ -21,7 +19,6 @@ const getQuery = (query, params = []) =>
     });
   });
 
-// Promisified db.all
 const allQuery = (query, params = []) =>
   new Promise((resolve, reject) => {
     db.all(query, params, (err, rows) => {
@@ -30,10 +27,6 @@ const allQuery = (query, params = []) =>
     });
   });
 
-// ----------------- Routes -----------------
-// IMPORTANT: Specific routes BEFORE generic /:id routes
-
-// GET - BOOKINGS FOR CALENDAR VIEW
 router.get("/calendar", requireAuth, async (req, res) => {
   try {
     const query = `
@@ -58,7 +51,6 @@ router.get("/calendar", requireAuth, async (req, res) => {
   }
 });
 
-// GET - ALL BOOKINGS
 router.get("/", requireAuth, (req, res) => {
   const query = `
     SELECT
@@ -83,16 +75,20 @@ router.get("/", requireAuth, (req, res) => {
     JOIN rooms r ON b.room_id = r.id
     ORDER BY b.id DESC
   `;
+
   db.all(query, [], (err, rows) => {
     if (err) {
-      console.error("Get bookings error:", err.message);
+      console.error("Get bookings error:", {
+        message: err.message,
+        code: err.code,
+        query,
+      });
       return res.status(500).json({ error: err.message });
     }
     res.json(rows);
   });
 });
 
-// POST - CREATE BOOKING
 router.post("/", requireAuth, async (req, res) => {
   try {
     const {
@@ -105,20 +101,24 @@ router.post("/", requireAuth, async (req, res) => {
       add_ons,
     } = req.body;
 
-    // ✅ Sanitize numeric fields — coerce to numbers regardless of what frontend sends
-    const price        = Number(req.body.price)        || 0;
+    const price = Number(req.body.price) || 0;
     const advance_paid = Number(req.body.advance_paid) || 0;
     const people_count = Number(req.body.people_count) || 1;
 
-    // ── Validation: check required fields FIRST before any DB calls ────────
     const missing = [];
-    if (!booking_id)  missing.push("booking_id");
+    if (!booking_id) missing.push("booking_id");
     if (!customer_id) missing.push("customer_id");
-    if (!room_id)     missing.push("room_id");
-    // if (!price)       missing.push("price");
+    if (!room_id) missing.push("room_id");
+    if (!price) missing.push("price");
 
     if (missing.length > 0) {
-      console.warn("❌ Missing fields:", missing);
+      console.warn("Booking validation failed:", {
+        missing,
+        booking_id,
+        customer_id,
+        room_id,
+        rawPrice: req.body.price,
+      });
       return res.status(400).json({
         error: `Missing required fields: ${missing.join(", ")}`,
         missing,
@@ -131,13 +131,14 @@ router.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    // ── Get creator info from JWT ──────────────────────────────────────────
-    const created_by_id   = req.user.id;
+    const created_by_id = req.user.id;
     const created_by_role = req.user.role;
-    let   created_by_name = null;
+    let created_by_name = null;
 
     if (created_by_role === "admin") {
-      const admin = await getQuery("SELECT name FROM users WHERE id = ?", [created_by_id]);
+      const admin = await getQuery("SELECT name FROM users WHERE id = ?", [
+        created_by_id,
+      ]);
       created_by_name = admin?.name || "Admin";
     }
 
@@ -149,25 +150,33 @@ router.post("/", requireAuth, async (req, res) => {
       created_by_name = staff?.name || "Staff";
     }
 
-    console.log("📝 Creating booking by:", { created_by_id, created_by_name, created_by_role });
+    console.log("Creating booking by:", {
+      created_by_id,
+      created_by_name,
+      created_by_role,
+    });
 
-    // ── Date strings ───────────────────────────────────────────────────────
-    const checkInStr  = check_in  || new Date().toISOString().slice(0, 19);
+    const checkInStr = check_in || new Date().toISOString().slice(0, 19);
     const checkOutStr = check_out || null;
 
-    // ── Room existence check ───────────────────────────────────────────────
-    const room = await getQuery("SELECT id, capacity FROM rooms WHERE id = ?", [room_id]);
+    const room = await getQuery("SELECT id, capacity FROM rooms WHERE id = ?", [
+      room_id,
+    ]);
     if (!room) {
+      console.warn("Booking rejected because room was not found:", {
+        room_id,
+        booking_id,
+        customer_id,
+      });
       return res.status(400).json({ error: "Invalid room selected" });
     }
 
-    // ── Availability conflict check ────────────────────────────────────────
     const availability = await getQuery(
       `SELECT COUNT(*) as conflictCount
        FROM bookings
        WHERE room_id = ?
          AND status IN ('Confirmed', 'Checked-in')
-         AND check_in  < ?
+         AND check_in < ?
          AND (check_out IS NULL OR check_out > ?)`,
       [room_id, checkOutStr || checkInStr, checkInStr]
     );
@@ -178,7 +187,6 @@ router.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    // ── Insert booking ─────────────────────────────────────────────────────
     const bookingStatus = status || "Confirmed";
 
     const result = await runQuery(
@@ -204,9 +212,11 @@ router.post("/", requireAuth, async (req, res) => {
       ]
     );
 
-    // ── Update room status ─────────────────────────────────────────────────
     const roomStatus = bookingStatus === "Checked-in" ? "Occupied" : "Booked";
-    await runQuery("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, room_id]);
+    await runQuery("UPDATE rooms SET status = ? WHERE id = ?", [
+      roomStatus,
+      room_id,
+    ]);
 
     console.log("✅ Booking created:", booking_id, "by", created_by_name);
 
@@ -218,12 +228,16 @@ router.post("/", requireAuth, async (req, res) => {
       message: "Booking created and room status updated",
     });
   } catch (err) {
-    console.error("Create booking error:", err.message);
+    console.error("Create booking error:", {
+      message: err.message,
+      code: err.code,
+      body: req.body,
+      user: req.user,
+    });
     res.status(500).json({ error: "Create booking failed: " + err.message });
   }
 });
 
-// POST - CHECKOUT
 router.post("/:id/checkout", requireAuth, async (req, res) => {
   try {
     const bookingId = req.params.id;
@@ -231,7 +245,11 @@ router.post("/:id/checkout", requireAuth, async (req, res) => {
 
     console.log(`Processing checkout for booking ${bookingId}`);
 
-    const result = await checkoutService.processCheckout(bookingId, req.body, req.user);
+    const result = await checkoutService.processCheckout(
+      bookingId,
+      req.body,
+      req.user
+    );
 
     if (!result.success) {
       return res.status(result.error.includes("Duplicate") ? 409 : 400).json({
@@ -256,7 +274,6 @@ router.post("/:id/checkout", requireAuth, async (req, res) => {
   }
 });
 
-// GET - BOOKING BY ID
 router.get("/:id", requireAuth, (req, res) => {
   const query = `
     SELECT
@@ -287,7 +304,6 @@ router.get("/:id", requireAuth, (req, res) => {
   });
 });
 
-// PUT - UPDATE BOOKING STATUS
 router.put("/:id", requireAuth, async (req, res) => {
   try {
     const { status } = req.body;
@@ -296,9 +312,13 @@ router.put("/:id", requireAuth, async (req, res) => {
     }
 
     const roomStatus =
-      status === "Checked-in"  ? "Occupied"  :
-      status === "Checked-out" ? "Available" :
-      status === "Confirmed"   ? "Booked"    : "Available";
+      status === "Checked-in"
+        ? "Occupied"
+        : status === "Checked-out"
+          ? "Available"
+          : status === "Confirmed"
+            ? "Booked"
+            : "Available";
 
     await runQuery("UPDATE bookings SET status = ? WHERE id = ?", [
       status,
@@ -324,7 +344,6 @@ router.put("/:id", requireAuth, async (req, res) => {
   }
 });
 
-// DELETE - BOOKING
 router.delete("/:id", requireAuth, (req, res) => {
   db.run("DELETE FROM bookings WHERE id = ?", [req.params.id], function (err) {
     if (err) return res.status(500).json({ error: err.message });
