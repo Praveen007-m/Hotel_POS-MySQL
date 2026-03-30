@@ -15,126 +15,60 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log("🔐 Login attempt:", email);
+    console.log("🔐 Login:", email);
 
-    // ================= VALIDATION =================
     if (!email || !password) {
-      return res.status(400).json({
-        message: "Email and password required",
-      });
+      return res.status(400).json({ message: "Missing fields" });
     }
 
-    // ================= JWT SECRET CHECK =================
-    if (!JWT_SECRET) {
-      console.error("❌ JWT_SECRET missing in env");
-      return res.status(500).json({
-        message: "Server misconfiguration",
-      });
+    if (!process.env.JWT_SECRET) {
+      console.error("❌ JWT_SECRET missing");
+      return res.status(500).json({ message: "Server config error" });
     }
 
-    // ================= GET USER =================
     const user = await new Promise((resolve, reject) => {
       db.get(
-        "SELECT id, name, email, password, role, staff_id FROM users WHERE email = ?",
+        "SELECT * FROM users WHERE email = ?",
         [email],
         (err, row) => {
-          if (err) {
-            console.error("❌ DB ERROR:", err);
-            return reject(err);
-          }
+          if (err) return reject(err);
           resolve(row);
         }
       );
     });
 
-    console.log("👤 User:", user);
+    console.log("👤 DB User:", user);
 
     if (!user) {
-      return res.status(401).json({
-        message: "Invalid credentials",
-      });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // ================= PASSWORD CHECK =================
+    if (!user.password) {
+      console.error("❌ Password missing in DB");
+      return res.status(500).json({ message: "Corrupted user data" });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
-    console.log("🔑 Password match:", isMatch);
+
+    console.log("🔑 Match:", isMatch);
 
     if (!isMatch) {
-      return res.status(401).json({
-        message: "Invalid credentials",
-      });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // ================= STAFF LOGIN =================
-    if (user.role === "staff") {
-      const staff = await new Promise((resolve, reject) => {
-        db.get(
-          "SELECT id, name, phone, status FROM staff WHERE id = ? AND status = 'active'",
-          [user.staff_id],
-          (err, row) => {
-            if (err) {
-              console.error("❌ STAFF DB ERROR:", err);
-              return reject(err);
-            }
-            resolve(row);
-          }
-        );
-      });
-
-      if (!staff) {
-        return res.status(403).json({
-          message: "Staff inactive or not found",
-        });
-      }
-
-      const token = jwt.sign(
-        {
-          id: user.id,
-          role: "staff",
-          staffId: staff.id,
-          name: staff.name,
-        },
-        JWT_SECRET,
-        { expiresIn: "24h" }
-      );
-
-      return res.json({
-        token,
-        user: {
-          id: user.id,
-          role: "staff",
-          staffId: staff.id,
-          name: staff.name,
-          phone: staff.phone,
-        },
-      });
-    }
-
-    // ================= ADMIN / KITCHEN =================
     const token = jwt.sign(
-      {
-        id: user.id,
-        role: user.role,
-        name: user.name,
-      },
-      JWT_SECRET,
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET,
       { expiresIn: "24h" }
     );
 
-    return res.json({
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-      },
-    });
+    res.json({ token, user });
 
-  } catch (error) {
-    console.error("🔥 LOGIN ERROR:", error);
-    return res.status(500).json({
+  } catch (err) {
+    console.error("🔥 LOGIN ERROR:", err);
+    res.status(500).json({
       message: "Internal server error",
-      error: error.message, // remove in production if needed
+      error: err.message,
     });
   }
 });
