@@ -3,8 +3,9 @@ CREATE TABLE IF NOT EXISTS rooms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     room_number TEXT UNIQUE NOT NULL,
     category TEXT NOT NULL,
-    status TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Available',
     price_per_night REAL NOT NULL,
+    capacity INTEGER DEFAULT 2,
     amenities TEXT DEFAULT '{}',
     add_ons TEXT DEFAULT '{}'
 );
@@ -31,6 +32,13 @@ CREATE TABLE IF NOT EXISTS bookings (
     check_out TEXT,
     status TEXT NOT NULL DEFAULT 'Confirmed',
     price REAL,
+    -- ✅ All columns required by booking routes
+    advance_paid REAL DEFAULT 0,
+    add_ons TEXT DEFAULT '[]',
+    people_count INTEGER DEFAULT 1,
+    created_by_id INTEGER,
+    created_by_name TEXT,
+    created_by_role TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (customer_id) REFERENCES customers(id),
@@ -112,7 +120,6 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 
 -- ================== BOOKING ADD ONS ==================
--- ✅ THIS WAS MISSING — caused "no such table: main.booking_addons" error
 CREATE TABLE IF NOT EXISTS booking_addons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     booking_id TEXT NOT NULL,
@@ -144,21 +151,24 @@ CREATE TABLE IF NOT EXISTS gst_settings (
 );
 
 -- ================== USERS ==================
+-- ✅ staff_id added — required for staff route JOIN: users u ON u.staff_id = s.id
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'staff', 'kitchen')),
+    staff_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ================== STAFF ==================
+-- ✅ email and UNIQUE name removed — staff route does NOT insert email into staff table
+--    email lives only in the users table. Keeping UNIQUE on name can cause collisions.
 CREATE TABLE IF NOT EXISTS staff (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    phone TEXT UNIQUE,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'active',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -178,7 +188,7 @@ CREATE TABLE IF NOT EXISTS restaurant_orders (
 );
 
 -- ================== INDEXES ==================
--- ✅ All indexes moved to the END — after all tables are created
+-- ✅ All indexes at the END — after all tables exist
 CREATE INDEX IF NOT EXISTS idx_billings_booking ON billings(booking_id);
 CREATE INDEX IF NOT EXISTS idx_billings_idempotency ON billings(idempotency_key);
 CREATE INDEX IF NOT EXISTS idx_invoices_billing ON invoices(billing_id);

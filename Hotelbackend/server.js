@@ -7,6 +7,7 @@ const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const db = require("./db/database");
+const { runMigrations } = require("./db/migrate"); // ✅ Import migrations
 
 // ================= GLOBAL CRASH HANDLER =================
 process.on("uncaughtException", (err) => {
@@ -71,28 +72,8 @@ app.use(cookieParser());
 // ================= STATIC FILES =================
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ================= DATABASE INIT =================
+// ================= DATABASE PATH =================
 const schemaPath = path.join(__dirname, "db/schema.sql");
-
-// ================= MIGRATIONS =================
-const migrations = [
-  "ALTER TABLE billings ADD COLUMN is_downloaded INTEGER DEFAULT 0",
-];
-
-async function runMigrations() {
-  for (const sql of migrations) {
-    await new Promise((resolve) => {
-      db.run(sql, (err) => {
-        if (err && !err.message.includes("duplicate column")) {
-          console.error("❌ Migration error:", err.message);
-        } else {
-          console.log("✅ Migration checked:", sql.substring(0, 60) + "...");
-        }
-        resolve();
-      });
-    });
-  }
-}
 
 // ================= SEED ADMIN USER =================
 async function seedAdminUser() {
@@ -138,11 +119,12 @@ async function seedAdminUser() {
 async function initDatabase() {
   try {
     if (!fs.existsSync(schemaPath)) {
-      throw new Error("schema.sql not found");
+      throw new Error("schema.sql not found at: " + schemaPath);
     }
 
-    console.log("📁 Initializing DB...");
+    console.log("📁 Initializing database...");
 
+    // ── Step 1: Apply base schema ──────────────────────────────────────────
     const schema = fs.readFileSync(schemaPath, "utf-8");
 
     const statements = schema
@@ -150,19 +132,19 @@ async function initDatabase() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
-    // Step 1: Apply schema
     for (const stmt of statements) {
       await new Promise((resolve, reject) => {
         db.run(stmt, (err) => {
           if (err) {
+            // Non-fatal: table or index already exists
             if (
               err.message.includes("already exists") ||
               err.message.includes("duplicate column")
             ) {
-              console.log("⚠️ Skipping:", err.message);
               return resolve();
             }
-            console.error("❌ SQL Error:", err.message);
+            console.error("❌ Schema error:", err.message);
+            console.error("   SQL:", stmt.substring(0, 120));
             return reject(err);
           }
           resolve();
@@ -170,18 +152,19 @@ async function initDatabase() {
       });
     }
 
-    console.log("✅ Schema applied successfully");
+    console.log("✅ Base schema applied");
 
-    // Step 2: Migrations
-    await runMigrations();
+    // ── Step 2: Run migrations (adds missing columns to existing tables) ──
+    await runMigrations(); // ✅ uses db/migrate.js
 
-    // Step 3: Seed admin
+    // ── Step 3: Seed default admin user ───────────────────────────────────
     await seedAdminUser();
 
     console.log("✅ Database initialized successfully");
     isDbReady = true;
   } catch (err) {
     console.error("❌ DB Init Error:", err.message);
+    // isDbReady stays false → 503 middleware handles requests gracefully
   }
 }
 
@@ -190,7 +173,7 @@ app.use((req, res, next) => {
   if (!isDbReady) {
     return res.status(503).json({
       success: false,
-      message: "Server initializing, please try again...",
+      message: "Server initializing, please try again in a moment...",
     });
   }
   next();
