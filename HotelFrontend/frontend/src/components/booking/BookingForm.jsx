@@ -98,7 +98,7 @@ export default function BookingForm({
       room_id: initialData?.room_id || "",
       ...getDefaultDateTimes(selectedDate), // 🔥 USE selectedDate
       price: "",
-      status: "Checked-in",
+      status: "Confirmed",
       people_count: 1,
       advance_paid: "",
       add_ons: {},
