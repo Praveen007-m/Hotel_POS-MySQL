@@ -23,7 +23,6 @@ export default function BookingForm({
 
   const pad = (n) => n.toString().padStart(2, "0");
 
-  // Format JS Date → datetime-local string
   const formatLocalDateTime = (date) => {
     return (
       date.getFullYear() +
@@ -38,12 +37,9 @@ export default function BookingForm({
     );
   };
 
-  // Format DB date (ISO or UTC) safely into local datetime-local format
   const formatFromDB = (dateString) => {
     if (!dateString) return "";
-
     const date = new Date(dateString);
-
     return (
       date.getFullYear() +
       "-" +
@@ -57,23 +53,20 @@ export default function BookingForm({
     );
   };
 
-  // Default check-in 1PM / check-out 11AM IST
   const getDefaultDateTimes = (clickedDate) => {
     const base = clickedDate ? new Date(clickedDate) : new Date();
-
-    // 🔥 Create LOCAL date properly (avoid UTC shift)
     const localDate = new Date(
       base.getFullYear(),
       base.getMonth(),
-      base.getDate(),
+      base.getDate()
     );
 
     const checkIn = new Date(localDate);
-    checkIn.setHours(13, 0, 0, 0); // 1 PM IST
+    checkIn.setHours(13, 0, 0, 0);
 
     const checkOut = new Date(localDate);
     checkOut.setDate(checkOut.getDate() + 1);
-    checkOut.setHours(11, 0, 0, 0); // 11 AM IST
+    checkOut.setHours(11, 0, 0, 0);
 
     return {
       check_in: formatLocalDateTime(checkIn),
@@ -82,21 +75,22 @@ export default function BookingForm({
   };
 
   const [form, setForm] = useState(() => {
-    // 🔹 If editing existing booking
     if (initialData && initialData.check_in) {
       return {
         ...initialData,
         check_in: formatFromDB(initialData.check_in),
         check_out: formatFromDB(initialData.check_out),
+        price: Number(initialData.price) || "",
+        advance_paid: Number(initialData.advance_paid) || "",
+        people_count: Number(initialData.people_count) || 1,
       };
     }
 
-    // 🔹 Creating from calendar click
     return {
       booking_id: "BK-" + Date.now(),
       customer_id: "",
       room_id: initialData?.room_id || "",
-      ...getDefaultDateTimes(selectedDate), // 🔥 USE selectedDate
+      ...getDefaultDateTimes(selectedDate),
       price: "",
       status: "Confirmed",
       people_count: 1,
@@ -115,12 +109,10 @@ export default function BookingForm({
 
     return !calendarBookings.some((b) => {
       if (b.room_id !== roomId) return false;
-
       const existingStart = new Date(b.check_in);
       const existingEnd = b.check_out
         ? new Date(b.check_out)
         : new Date(existingStart.getTime() + 24 * 60 * 60 * 1000);
-
       return checkIn < existingEnd && checkOut > existingStart;
     });
   };
@@ -137,9 +129,7 @@ export default function BookingForm({
             axios.get(`${API_BASE_URL}/api/rooms`),
             axios.get(`${API_BASE_URL}/api/addons`),
             axios.get(`${API_BASE_URL}/api/bookings/calendar`, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
+              headers: { Authorization: `Bearer ${token}` },
             }),
           ]);
 
@@ -148,7 +138,6 @@ export default function BookingForm({
         setAvailableAddons(resAddons.data);
         setCalendarBookings(resCalendar.data);
 
-        // Initialize add-ons
         const addonsObj = {};
         resAddons.data.forEach((a) => {
           addonsObj[a.name] = false;
@@ -158,9 +147,9 @@ export default function BookingForm({
           ...prev,
           add_ons: initialData?.add_ons
             ? resAddons.data.reduce((acc, a) => {
-              acc[a.name] = initialData.add_ons.includes(a.name);
-              return acc;
-            }, {})
+                acc[a.name] = initialData.add_ons.includes(a.name);
+                return acc;
+              }, {})
             : addonsObj,
         }));
       } catch (error) {
@@ -179,27 +168,21 @@ export default function BookingForm({
     const selectedRoom = rooms.find((r) => r.id === Number(form.room_id));
 
     if (selectedRoom) {
-      const roomPrice = Number(selectedRoom.price_per_night || 0);
-
+      // ✅ Always store as a clean Number, never a string with ₹
       setForm((prev) => ({
         ...prev,
-        price: roomPrice,
+        price: Number(selectedRoom.price_per_night) || 0,
       }));
-
       setSelectedRoomCapacity(selectedRoom.capacity);
     }
   }, [form.room_id, rooms]);
 
   useEffect(() => {
     if (!form.room_id) return;
-
     const conflict = getRoomConflict(form.room_id);
-
     if (conflict) {
       setRoomWarning(
-        `⚠️ This room is already booked from 
-        ${conflict.start.toLocaleDateString()} 
-        to ${conflict.end.toLocaleDateString()}`,
+        `⚠️ This room is already booked from ${conflict.start.toLocaleDateString()} to ${conflict.end.toLocaleDateString()}`
       );
     } else {
       setRoomWarning("");
@@ -207,13 +190,10 @@ export default function BookingForm({
   }, [form.check_in, form.check_out, form.room_id]);
 
   /* ===================== HANDLERS ===================== */
-
   const getRoomConflict = (roomId) => {
     const roomBookings = calendarBookings.filter((b) => b.room_id === roomId);
-
     if (roomBookings.length === 0) return null;
 
-    // 🔹 If no dates selected → show first booking info
     if (!form.check_in) {
       const b = roomBookings[0];
       return {
@@ -225,7 +205,6 @@ export default function BookingForm({
       };
     }
 
-    // 🔹 Normal overlap logic when dates exist
     const checkIn = new Date(form.check_in);
     const checkOut = form.check_out
       ? new Date(form.check_out)
@@ -238,11 +217,7 @@ export default function BookingForm({
         : new Date(existingStart.getTime() + 24 * 60 * 60 * 1000);
 
       if (checkIn < existingEnd && checkOut > existingStart) {
-        return {
-          start: existingStart,
-          end: existingEnd,
-          reason: "overlap",
-        };
+        return { start: existingStart, end: existingEnd, reason: "overlap" };
       }
     }
 
@@ -251,20 +226,7 @@ export default function BookingForm({
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-
-    // datetime-local → store as LOCAL STRING
-    if (name === "check_in" || name === "check_out") {
-      setForm((prev) => ({
-        ...prev,
-        [name]: value, // ✅ keep local
-      }));
-      return;
-    }
-
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleRoomChange = (e) => {
@@ -273,25 +235,17 @@ export default function BookingForm({
 
     const conflict = getRoomConflict(roomId);
 
-    // ✅ Always allow selection
-    setForm((prev) => ({
-      ...prev,
-      room_id: roomId,
-    }));
+    setForm((prev) => ({ ...prev, room_id: roomId }));
 
-    // ⚠️ Only show warning
     if (conflict) {
       setRoomWarning(
-        `This room is already booked from 
-        ${conflict.start.toLocaleDateString()} 
-        to ${conflict.end.toLocaleDateString()}`,
+        `This room is already booked from ${conflict.start.toLocaleDateString()} to ${conflict.end.toLocaleDateString()}`
       );
     } else {
       setRoomWarning("");
     }
   };
 
-  // ✅ Toggle dynamic add-on
   const toggleAddon = (addonName) => {
     setForm((prev) => ({
       ...prev,
@@ -305,15 +259,15 @@ export default function BookingForm({
   const handleSaveCustomer = async (formData) => {
     try {
       const config = { headers: { "Content-Type": "multipart/form-data" } };
-      const res = await axios.post(`${API_BASE_URL}/api/customers`, formData, config);
-
+      const res = await axios.post(
+        `${API_BASE_URL}/api/customers`,
+        formData,
+        config
+      );
       toast.success("Customer created successfully!");
-
-      // Update customer list and select the new one
       const newCustomer = res.data.customer || res.data;
       setCustomers((prev) => [...prev, newCustomer]);
       setForm((prev) => ({ ...prev, customer_id: newCustomer.id }));
-
       setShowCustomerModal(false);
     } catch (err) {
       console.error(err);
@@ -322,22 +276,33 @@ export default function BookingForm({
   };
 
   const handleSubmit = () => {
-    if (!form.customer_id || !form.room_id) {
-      toast.warning("Please select a customer and room.");
+    // ── Frontend validation ───────────────────────────────────────────────
+    if (!form.customer_id) {
+      toast.warning("Please select a customer.");
+      return;
+    }
+    if (!form.room_id) {
+      toast.warning("Please select a room.");
+      return;
+    }
+    if (!form.price || Number(form.price) <= 0) {
+      toast.warning("Room price is missing. Please select a valid room.");
+      return;
+    }
+    if (!form.check_in) {
+      toast.warning("Please set a check-in date.");
       return;
     }
 
     const conflict = getRoomConflict(form.room_id);
-
     if (conflict) {
       toast.warning(
-        `Cannot save booking.\n\nRoom is already booked from 
-        ${conflict.start.toLocaleDateString()} 
-        to ${conflict.end.toLocaleDateString()}`,
+        `Cannot save booking. Room is already booked from ${conflict.start.toLocaleDateString()} to ${conflict.end.toLocaleDateString()}`
       );
-      return; // ❌ stop submission
+      return;
     }
 
+    // ── Build add-ons array ───────────────────────────────────────────────
     const selectedAddOns = availableAddons
       .filter((addon) => form.add_ons[addon.name])
       .map((addon) => ({
@@ -345,13 +310,21 @@ export default function BookingForm({
         amount: addon.price,
       }));
 
+    // ✅ Sanitize all numeric fields before sending — no strings, no ₹ symbols
     const payload = {
-      ...form,
+      booking_id: form.booking_id,
+      customer_id: Number(form.customer_id),
+      room_id: Number(form.room_id),
       check_in: form.check_in || null,
       check_out: form.check_out || null,
+      status: form.status || "Confirmed",
+      price: Number(form.price),                          // ✅ clean number
+      advance_paid: Number(form.advance_paid) || 0,       // ✅ clean number
+      people_count: Number(form.people_count) || 1,       // ✅ clean number
       add_ons: selectedAddOns,
     };
 
+    console.log("📦 Submitting booking payload:", payload); // helpful for debugging
     onSubmit(payload);
   };
 
@@ -430,13 +403,11 @@ export default function BookingForm({
             }}
             className="form-input w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
           />
-
           {selectedRoomCapacity && (
             <p className="text-xs text-gray-500 mt-1">
               Room capacity: {selectedRoomCapacity} guests
             </p>
           )}
-
           {selectedRoomCapacity && form.people_count > selectedRoomCapacity && (
             <p className="bg-red-50 border-l-4 border-red-600 text-red-800 text-xs px-2 py-1.5 rounded mt-2">
               ⚠️ EXCEEDS CAPACITY ({selectedRoomCapacity} GUESTS)
@@ -475,13 +446,13 @@ export default function BookingForm({
           )}
         </div>
 
-        {/* Price */}
+        {/* Price — display only, value stored as Number in state */}
         <div>
           <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
             Room Price
           </label>
           <div className="w-full px-3 py-2 border border-gray-300 rounded bg-gray-50 text-sm font-medium text-gray-700">
-            ₹{form.price || "—"}
+            {form.price ? `₹${form.price}` : "—"}
           </div>
         </div>
 
@@ -571,10 +542,11 @@ export default function BookingForm({
               key={addon.id}
               type="button"
               onClick={() => toggleAddon(addon.name)}
-              className={`addon-btn px-3 py-1.5 rounded border transition-all duration-200 ease-out text-sm font-medium ${form.add_ons[addon.name]
-                ? "bg-[#0A1B4D] text-white border-[#0A1B4D] hover:bg-[#081341] hover:border-[#081341]"
-                : "bg-white border-gray-300 text-gray-700 hover:border-[#0A1B4D]"
-                }`}
+              className={`addon-btn px-3 py-1.5 rounded border transition-all duration-200 ease-out text-sm font-medium ${
+                form.add_ons[addon.name]
+                  ? "bg-[#0A1B4D] text-white border-[#0A1B4D] hover:bg-[#081341] hover:border-[#081341]"
+                  : "bg-white border-gray-300 text-gray-700 hover:border-[#0A1B4D]"
+              }`}
             >
               {addon.name} (₹{addon.price})
             </button>
@@ -590,7 +562,6 @@ export default function BookingForm({
         >
           CANCEL
         </button>
-
         <button
           onClick={handleSubmit}
           className="px-4 py-2 bg-[#0A1B4D] text-white rounded hover:bg-[#081341] transition-colors duration-200 ease-out text-sm font-medium"
