@@ -24,10 +24,7 @@ router.get("/", requireAuth, requireAdmin, (req, res) => {
     [],
     (err, rows) => {
       if (err) {
-        console.error("Database error while fetching staff:", {
-          message: err.message,
-          code: err.code,
-        });
+        console.error("Database error:", err);
         return res.status(500).json({ message: "Failed to fetch staff" });
       }
       res.json(rows);
