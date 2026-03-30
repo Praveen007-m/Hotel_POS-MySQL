@@ -156,7 +156,16 @@ router.post("/", requireAuth, async (req, res) => {
     const checkOutStr = check_out || null;
 
     // ── Room existence check ───────────────────────────────────────────────
+    console.log("Booking room lookup input:", {
+      room_id,
+      booking_id,
+      customer_id,
+    });
+
     const room = await getQuery("SELECT id, capacity FROM rooms WHERE id = ?", [room_id]);
+
+    console.log("Booking room lookup result:", room);
+
     if (!room) {
       return res.status(400).json({ error: "Invalid room selected" });
     }
