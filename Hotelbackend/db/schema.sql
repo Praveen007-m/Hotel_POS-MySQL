@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS customers (
     id_type TEXT,
     id_number TEXT,
     address TEXT,
+    vehicle_no TEXT,
+    dob TEXT,
+    document TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -66,7 +69,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
 CREATE TABLE IF NOT EXISTS kitchen_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     room_id INTEGER NOT NULL,
-    booking_id INTEGER,
+    booking_id TEXT,
     item_id INTEGER NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'Pending',
