@@ -1,5 +1,6 @@
 const express = require("express");
-const bcrypt = require("bcrypt");
+// const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("../db/database");
 const { requireAuth } = require("../middleware/auth");
@@ -10,94 +11,132 @@ const JWT_SECRET = process.env.JWT_SECRET;
 /* ======================
    LOGIN (PUBLIC)
 ====================== */
-router.post("/login", (req, res) => {
-  const { email, password } = req.body;
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password required" });
-  }
+    console.log("🔐 Login attempt:", email);
 
-  db.get(
-    "SELECT id, name, email, password, role, staff_id FROM users WHERE email = ?",
-    [email],
-    async (err, user) => {
-      if (err) {
-        return res.status(500).json({ message: "Database error" });
-      }
+    // ================= VALIDATION =================
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and password required",
+      });
+    }
 
-      if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
+    // ================= JWT SECRET CHECK =================
+    if (!JWT_SECRET) {
+      console.error("❌ JWT_SECRET missing in env");
+      return res.status(500).json({
+        message: "Server misconfiguration",
+      });
+    }
 
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
+    // ================= GET USER =================
+    const user = await new Promise((resolve, reject) => {
+      db.get(
+        "SELECT id, name, email, password, role, staff_id FROM users WHERE email = ?",
+        [email],
+        (err, row) => {
+          if (err) {
+            console.error("❌ DB ERROR:", err);
+            return reject(err);
+          }
+          resolve(row);
+        }
+      );
+    });
 
-      /* ================= STAFF ================= */
-      if (user.role === "staff") {
+    console.log("👤 User:", user);
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Invalid credentials",
+      });
+    }
+
+    // ================= PASSWORD CHECK =================
+    const isMatch = await bcrypt.compare(password, user.password);
+    console.log("🔑 Password match:", isMatch);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Invalid credentials",
+      });
+    }
+
+    // ================= STAFF LOGIN =================
+    if (user.role === "staff") {
+      const staff = await new Promise((resolve, reject) => {
         db.get(
           "SELECT id, name, phone, status FROM staff WHERE id = ? AND status = 'active'",
           [user.staff_id],
-          (err, staff) => {
+          (err, row) => {
             if (err) {
-              return res.status(500).json({ message: "Database error" });
+              console.error("❌ STAFF DB ERROR:", err);
+              return reject(err);
             }
-
-            if (!staff) {
-              return res
-                .status(403)
-                .json({ message: "Staff inactive or not found" });
-            }
-
-            const token = jwt.sign(
-              {
-                id: user.id,
-                role: "staff",
-                staffId: staff.id,
-                name: staff.name,
-              },
-              JWT_SECRET,
-              { expiresIn: "24h" }
-            );
-
-            return res.json({
-              token,
-              user: {
-                id: user.id,
-                role: "staff",
-                staffId: staff.id,
-                name: staff.name,
-                phone: staff.phone,
-              },
-            });
+            resolve(row);
           }
         );
-      }
+      });
 
-      /* ================= ADMIN / KITCHEN ================= */
-      else {
-        const token = jwt.sign(
-          {
-            id: user.id,
-            role: user.role, // admin | kitchen
-            name: user.name,
-          },
-          JWT_SECRET,
-          { expiresIn: "24h" }
-        );
-
-        return res.json({
-          token,
-          user: {
-            id: user.id,
-            name: user.name,
-            role: user.role, // admin | kitchen
-          },
+      if (!staff) {
+        return res.status(403).json({
+          message: "Staff inactive or not found",
         });
       }
+
+      const token = jwt.sign(
+        {
+          id: user.id,
+          role: "staff",
+          staffId: staff.id,
+          name: staff.name,
+        },
+        JWT_SECRET,
+        { expiresIn: "24h" }
+      );
+
+      return res.json({
+        token,
+        user: {
+          id: user.id,
+          role: "staff",
+          staffId: staff.id,
+          name: staff.name,
+          phone: staff.phone,
+        },
+      });
     }
-  );
+
+    // ================= ADMIN / KITCHEN =================
+    const token = jwt.sign(
+      {
+        id: user.id,
+        role: user.role,
+        name: user.name,
+      },
+      JWT_SECRET,
+      { expiresIn: "24h" }
+    );
+
+    return res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+      },
+    });
+
+  } catch (error) {
+    console.error("🔥 LOGIN ERROR:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message, // remove in production if needed
+    });
+  }
 });
 
 /* ======================
