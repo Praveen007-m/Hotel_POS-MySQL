@@ -198,6 +198,10 @@ async function initDatabase() {
 
 // ================= DB READY MIDDLEWARE =================
 app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return next();
+  }
+
   if (!isDbReady) {
     return res.status(503).json({
       success: false,
