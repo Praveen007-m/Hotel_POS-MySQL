@@ -10,6 +10,9 @@ const seedDbPath = process.env.SQLITE_SEED_PATH || bundledDbPath;
 const importBundledDb =
   process.env.SQLITE_IMPORT_ON_BOOT === "true" ||
   process.env.SQLITE_IMPORT_ON_BOOT === "1";
+const forceImportBundledDb =
+  process.env.SQLITE_FORCE_IMPORT_ON_BOOT === "true" ||
+  process.env.SQLITE_FORCE_IMPORT_ON_BOOT === "1";
 
 let dbPath;
 
@@ -26,6 +29,7 @@ if (configuredDbPath) {
 console.log("📁 Using DB Path:", dbPath);
 console.log("📦 Seed DB Path:", seedDbPath);
 console.log("📦 Import on boot enabled:", importBundledDb);
+console.log("📦 Force import on boot enabled:", forceImportBundledDb);
 console.log("📦 Seed DB exists:", fs.existsSync(seedDbPath));
 console.log("📦 Target DB exists before connect:", fs.existsSync(dbPath));
 
@@ -38,24 +42,43 @@ try {
   console.error("❌ Failed to create DB directory:", err);
 }
 
-if (
-  isProd &&
-  importBundledDb &&
-  dbPath !== seedDbPath &&
-  !fs.existsSync(dbPath) &&
-  fs.existsSync(seedDbPath)
-) {
-  try {
-    fs.copyFileSync(seedDbPath, dbPath);
-    console.log(`✅ Seed DB copied from ${seedDbPath} to ${dbPath}`);
-  } catch (err) {
-    console.error("❌ Failed to seed DB file:", err);
+if (isProd && dbPath !== seedDbPath && fs.existsSync(seedDbPath)) {
+  const targetExists = fs.existsSync(dbPath);
+
+  if (forceImportBundledDb) {
+    try {
+      if (targetExists) {
+        const backupPath = `${dbPath}.backup-${Date.now()}`;
+        fs.copyFileSync(dbPath, backupPath);
+        console.log(`📦 Existing DB backed up to ${backupPath}`);
+      }
+
+      fs.copyFileSync(seedDbPath, dbPath);
+      console.log(`✅ Seed DB force-copied from ${seedDbPath} to ${dbPath}`);
+    } catch (err) {
+      console.error("❌ Failed to force seed DB file:", err);
+    }
+  } else if (importBundledDb && !targetExists) {
+    try {
+      fs.copyFileSync(seedDbPath, dbPath);
+      console.log(`✅ Seed DB copied from ${seedDbPath} to ${dbPath}`);
+    } catch (err) {
+      console.error("❌ Failed to seed DB file:", err);
+    }
+  } else if (importBundledDb || forceImportBundledDb) {
+    console.log("📦 Seed DB copy skipped:", {
+      samePath: dbPath === seedDbPath,
+      targetExists,
+      seedExists: fs.existsSync(seedDbPath),
+      forceImportBundledDb,
+    });
   }
-} else if (isProd && importBundledDb) {
+} else if (isProd && (importBundledDb || forceImportBundledDb)) {
   console.log("📦 Seed DB copy skipped:", {
     samePath: dbPath === seedDbPath,
     targetExists: fs.existsSync(dbPath),
     seedExists: fs.existsSync(seedDbPath),
+    forceImportBundledDb,
   });
 }
 
