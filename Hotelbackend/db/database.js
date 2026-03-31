@@ -24,6 +24,10 @@ if (configuredDbPath) {
 }
 
 console.log("📁 Using DB Path:", dbPath);
+console.log("📦 Seed DB Path:", seedDbPath);
+console.log("📦 Import on boot enabled:", importBundledDb);
+console.log("📦 Seed DB exists:", fs.existsSync(seedDbPath));
+console.log("📦 Target DB exists before connect:", fs.existsSync(dbPath));
 
 try {
   const dbDir = path.dirname(dbPath);
@@ -47,6 +51,12 @@ if (
   } catch (err) {
     console.error("❌ Failed to seed DB file:", err);
   }
+} else if (isProd && importBundledDb) {
+  console.log("📦 Seed DB copy skipped:", {
+    samePath: dbPath === seedDbPath,
+    targetExists: fs.existsSync(dbPath),
+    seedExists: fs.existsSync(seedDbPath),
+  });
 }
 
 const db = new sqlite3.Database(
