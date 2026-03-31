@@ -4,23 +4,31 @@ const fs = require("fs");
 
 // ✅ Detect environment
 const isProd = process.env.NODE_ENV === "production";
+const configuredDbPath = process.env.SQLITE_DB_PATH;
+const volumeMountPath = process.env.RAILWAY_VOLUME_MOUNT_PATH;
 
-// ✅ Use /tmp for Railway (VERY IMPORTANT)
-const dbPath = isProd
-  ? "/tmp/hotel.db"
-  : path.join(__dirname, "hotel.db");
+let dbPath;
+
+if (configuredDbPath) {
+  dbPath = configuredDbPath;
+} else if (isProd && volumeMountPath) {
+  dbPath = path.join(volumeMountPath, "hotel.db");
+} else if (isProd) {
+  dbPath = "/tmp/hotel.db";
+} else {
+  dbPath = path.join(__dirname, "hotel.db");
+}
 
 console.log("📁 Using DB Path:", dbPath);
 
 // ✅ Ensure directory exists (safety)
-if (isProd) {
-  try {
-    if (!fs.existsSync("/tmp")) {
-      fs.mkdirSync("/tmp", { recursive: true });
-    }
-  } catch (err) {
-    console.error("❌ Failed to create /tmp directory:", err);
+try {
+  const dbDir = path.dirname(dbPath);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
   }
+} catch (err) {
+  console.error("❌ Failed to create DB directory:", err);
 }
 
 // ✅ Create DB connection
