@@ -2,10 +2,14 @@ const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const fs = require("fs");
 
-// ✅ Detect environment
 const isProd = process.env.NODE_ENV === "production";
 const configuredDbPath = process.env.SQLITE_DB_PATH;
 const volumeMountPath = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+const bundledDbPath = path.join(__dirname, "hotel.db");
+const seedDbPath = process.env.SQLITE_SEED_PATH || bundledDbPath;
+const importBundledDb =
+  process.env.SQLITE_IMPORT_ON_BOOT === "true" ||
+  process.env.SQLITE_IMPORT_ON_BOOT === "1";
 
 let dbPath;
 
@@ -16,12 +20,11 @@ if (configuredDbPath) {
 } else if (isProd) {
   dbPath = "/tmp/hotel.db";
 } else {
-  dbPath = path.join(__dirname, "hotel.db");
+  dbPath = bundledDbPath;
 }
 
 console.log("📁 Using DB Path:", dbPath);
 
-// ✅ Ensure directory exists (safety)
 try {
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
@@ -31,7 +34,21 @@ try {
   console.error("❌ Failed to create DB directory:", err);
 }
 
-// ✅ Create DB connection
+if (
+  isProd &&
+  importBundledDb &&
+  dbPath !== seedDbPath &&
+  !fs.existsSync(dbPath) &&
+  fs.existsSync(seedDbPath)
+) {
+  try {
+    fs.copyFileSync(seedDbPath, dbPath);
+    console.log(`✅ Seed DB copied from ${seedDbPath} to ${dbPath}`);
+  } catch (err) {
+    console.error("❌ Failed to seed DB file:", err);
+  }
+}
+
 const db = new sqlite3.Database(
   dbPath,
   sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
@@ -44,21 +61,17 @@ const db = new sqlite3.Database(
   }
 );
 
-// ✅ SAFE CONFIG (WAL can crash on Railway → disable in prod)
 db.serialize(() => {
   if (!isProd) {
     db.run("PRAGMA journal_mode = WAL;");
   } else {
-    db.run("PRAGMA journal_mode = DELETE;"); // safer for Railway
+    db.run("PRAGMA journal_mode = DELETE;");
   }
 
   db.run("PRAGMA synchronous = NORMAL;");
   db.run("PRAGMA busy_timeout = 5000;");
-
-  // ✅ Migration moved to server.js initDatabase() — runs after schema is created
 });
 
-// ✅ GLOBAL ERROR LOGGING
 db.on("error", (err) => {
   console.error("💥 SQLite Runtime Error:", err);
 });

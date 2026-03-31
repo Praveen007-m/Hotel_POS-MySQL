@@ -41,19 +41,37 @@ const PORT = process.env.PORT || 5000;
 let isDbReady = false;
 
 // ================= CORS CONFIG =================
+const configuredClientUrls = [
+  process.env.CLIENT_URL,
+  process.env.NETLIFY_URL ? `https://${process.env.NETLIFY_URL}` : null,
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:3000",
+].filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  if (configuredClientUrls.includes(origin)) {
+    return true;
+  }
+
+  return (
+    origin.includes(".netlify.app") ||
+    origin.includes("localhost") ||
+    origin.includes("127.0.0.1") ||
+    origin.includes(".railway.app")
+  );
+};
+
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-
-    if (
-      origin.includes("netlify.app") ||
-      origin.includes("localhost") ||
-      origin.includes("railway.app")
-    ) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
 
-    console.log("❌ CORS blocked:", origin);
+    console.log("❌ CORS blocked:", origin, "allowed:", configuredClientUrls);
     return callback(null, false);
   },
   credentials: true,
