@@ -41,9 +41,13 @@ const PORT = process.env.PORT || 5000;
 let isDbReady = false;
 
 // ================= CORS CONFIG =================
+const normalizeOrigin = (value) => value?.trim().replace(/\/+$/, "");
+
 const configuredClientUrls = [
-  process.env.CLIENT_URL,
-  process.env.NETLIFY_URL ? `https://${process.env.NETLIFY_URL}` : null,
+  normalizeOrigin(process.env.CLIENT_URL),
+  process.env.NETLIFY_URL
+    ? normalizeOrigin(`https://${process.env.NETLIFY_URL}`)
+    : null,
   "http://localhost:5173",
   "http://localhost:3000",
   "http://127.0.0.1:5173",
@@ -53,15 +57,17 @@ const configuredClientUrls = [
 const isAllowedOrigin = (origin) => {
   if (!origin) return true;
 
-  if (configuredClientUrls.includes(origin)) {
+  const normalizedOrigin = normalizeOrigin(origin);
+
+  if (configuredClientUrls.includes(normalizedOrigin)) {
     return true;
   }
 
   return (
-    origin.includes(".netlify.app") ||
-    origin.includes("localhost") ||
-    origin.includes("127.0.0.1") ||
-    origin.includes(".railway.app")
+    normalizedOrigin.includes(".netlify.app") ||
+    normalizedOrigin.includes("localhost") ||
+    normalizedOrigin.includes("127.0.0.1") ||
+    normalizedOrigin.includes(".railway.app")
   );
 };
 
@@ -78,6 +84,32 @@ const corsOptions = {
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
+
+console.log("🌐 Allowed CORS origins:", configuredClientUrls);
+
+// Ensure Railway/Netlify preflight requests always receive explicit CORS headers.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin && isAllowedOrigin(origin)) {
+    res.header("Access-Control-Allow-Origin", normalizeOrigin(origin));
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,DELETE,PATCH,OPTIONS"
+    );
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  } else if (origin) {
+    console.log("❌ CORS blocked:", origin, "allowed:", configuredClientUrls);
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
 
 // ✅ Apply CORS — must be before everything else
 app.use(cors(corsOptions));
