@@ -83,35 +83,13 @@ const corsOptions = {
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
 };
 
 console.log("🌐 Allowed CORS origins:", configuredClientUrls);
 
-// Ensure Railway/Netlify preflight requests always receive explicit CORS headers.
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  if (origin && isAllowedOrigin(origin)) {
-    res.header("Access-Control-Allow-Origin", normalizeOrigin(origin));
-    res.header("Vary", "Origin");
-    res.header("Access-Control-Allow-Credentials", "true");
-    res.header(
-      "Access-Control-Allow-Methods",
-      "GET,POST,PUT,DELETE,PATCH,OPTIONS"
-    );
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  } else if (origin) {
-    console.log("❌ CORS blocked:", origin, "allowed:", configuredClientUrls);
-  }
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
-
 // ✅ Apply CORS — must be before everything else
+app.options(/.*/, cors(corsOptions));
 app.use(cors(corsOptions));
 
 // ================= MIDDLEWARE =================
