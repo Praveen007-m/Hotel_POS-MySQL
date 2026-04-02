@@ -33,6 +33,27 @@ router.get("/", async (req, res) => {
 });
 
 /* ===============================
+   GET BILLING PREVIEW (for checkout)
+   URL: /api/billings/preview/:bookingId
+   Returns full billing calculation with room + addons + kitchen
+   WITHOUT persisting anything
+================================ */
+router.get("/preview/:bookingId", async (req, res) => {
+  const { bookingId } = req.params;
+  
+  try {
+    const preview = await billingService.getBillingPreview(bookingId);
+    res.json(preview);
+  } catch (error) {
+    console.error("❌ BILLING PREVIEW FAILED:", error);
+    if (error.message === 'Booking not found') {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* ===============================
    GET SINGLE BILL + DETAILS
    URL: /api/billings/:id
 ================================ */
@@ -56,33 +77,31 @@ router.get("/:id", async (req, res) => {
    DELETE BILL
    URL: /api/billings/:id
 ================================ */
-router.delete("/:id", (req, res) => {
+router.delete("/:id", async (req, res) => {
   const billId = req.params.id;
 
-  db.run("DELETE FROM billings WHERE id = ?", [billId], function (err) {
-    if (err) {
-      console.error("❌ DELETE BILL FAILED:", err);
-      return res.status(500).json({ error: "Failed to delete bill" });
-    }
-
-    if (this.changes === 0) {
+  try {
+    const [result] = await db.query("DELETE FROM billings WHERE id = ?", [billId]);
+    if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Bill not found" });
     }
 
     console.log("✅ BILL DELETED:", billId);
     res.json({ message: "Bill deleted successfully" });
-  });
+  } catch (err) {
+    console.error("❌ DELETE BILL FAILED:", err);
+    res.status(500).json({ error: "Failed to delete bill" });
+  }
 });
 
 /* ===============================
    MARK BILL AS DOWNLOADED
    URL: PATCH /api/billings/:id/downloaded
 ================================ */
-router.patch("/:id/downloaded", (req, res) => {
+router.patch("/:id/downloaded", async (req, res) => {
   const billId = req.params.id;
   const { gst_number } = req.body;
 
-  // Build dynamic UPDATE query
   const updates = ["is_downloaded = 1"];
   const params = [];
 
@@ -92,16 +111,12 @@ router.patch("/:id/downloaded", (req, res) => {
   }
 
   params.push(billId);
-
   const sql = `UPDATE billings SET ${updates.join(", ")} WHERE id = ?`;
 
-  db.run(sql, params, function (err) {
-    if (err) {
-      console.error("❌ MARK DOWNLOADED FAILED:", err);
-      return res.status(500).json({ error: "Failed to update bill" });
-    }
+  try {
+    const [result] = await db.query(sql, params);
 
-    if (this.changes === 0) {
+    if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Bill not found" });
     }
 
@@ -110,10 +125,13 @@ router.patch("/:id/downloaded", (req, res) => {
       console.log("✅ GST NUMBER SAVED:", gst_number);
     }
     res.json({ message: "Bill marked as downloaded" });
-  });
+  } catch (err) {
+    console.error("❌ MARK DOWNLOADED FAILED:", err);
+    res.status(500).json({ error: "Failed to update bill" });
+  }
 });
 
-router.get("/export/csv", (req, res) => {
+router.get("/export/csv", async (req, res) => {
   /*
     Simple billing export with columns: ID, Invoice No., Name, Guest GST No.,
     Room description, HSN Code Hotel, Room price.
@@ -124,21 +142,18 @@ router.get("/export/csv", (req, res) => {
       b.id AS id,
       c.name AS customer_name,
       b.gst_number,
-      r.room_number || ' / ' || r.category AS room_description,
+      CONCAT(r.room_number, ' / ', r.category) AS room_description,
       b.room_price
     FROM billings b
     LEFT JOIN customers c ON c.id = b.customer_id
     LEFT JOIN rooms r ON r.id = b.room_id
-    WHERE b.is_deleted = 0
     ORDER BY b.created_at DESC
   `;
 
-  db.all(sql, [], async (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-
-    try {
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Billing Statements");
+  try {
+    const [rows] = await db.query(sql);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Billing Statements");
 
       // header row with requested columns
       const headerRow = worksheet.addRow([
@@ -227,7 +242,6 @@ router.get("/export/csv", (req, res) => {
       console.error("Export error:", error);
       res.status(500).json({ error: "Failed to generate export" });
     }
-  });
 });
 
 module.exports = router;

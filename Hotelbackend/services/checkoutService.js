@@ -40,21 +40,22 @@ class CheckoutService {
 
       const roomTotal = Number(booking.price || 0) * stayDays;
 
-      // Kitchen
+      // ✅ Kitchen (FIXED)
       const kitchenResult = await dbService.all(
         `SELECT SUM(ko.quantity * mi.price) as total
          FROM kitchen_orders ko
          JOIN menu_items mi ON ko.item_id = mi.id
-         WHERE ko.booking_id = ?`,
-        [booking.id]
+         WHERE ko.booking_id = ?
+         AND ko.status = 'Served'`,
+        [booking.booking_id]
       );
 
       const kitchenTotal = Number(kitchenResult[0]?.total || 0);
 
-      // Existing addons
+      // ✅ Existing addons (FIXED)
       const dbAddons = await dbService.all(
         `SELECT price FROM booking_addons WHERE booking_id = ?`,
-        [booking.id]
+        [booking.booking_id]
       );
 
       const dbAddonTotal = dbAddons.reduce(
@@ -83,7 +84,6 @@ class CheckoutService {
         providedTotal,
       });
 
-      // ✅ FIX: DO NOT BLOCK — only warn
       if (Math.abs(expectedTotal - providedTotal) > 1) {
         console.warn(
           `⚠️ Total mismatch (IGNORED): expected ${expectedTotal}, got ${providedTotal}`
@@ -93,13 +93,13 @@ class CheckoutService {
       // ================= TRANSACTION =================
 
       const billingId = await dbService.transaction(async () => {
-        // Save addons
+        // ✅ Save addons (FIXED)
         for (const addon of add_ons) {
           await dbService.run(
             `INSERT INTO booking_addons (booking_id, name, price)
              VALUES (?, ?, ?)`,
             [
-              bookingId,
+              booking.booking_id, // ✅ FIXED
               addon.name || "Custom Add-on",
               Number(addon.price || 0),
             ]
@@ -109,9 +109,9 @@ class CheckoutService {
         // Update booking
         await dbService.run(
           `UPDATE bookings 
-           SET status = 'Checked-out', check_out = ?
+           SET status = 'Checked-out', check_out = NOW()
            WHERE id = ?`,
-          [new Date().toISOString(), bookingId]
+          [bookingId]
         );
 
         // Free room
@@ -120,29 +120,21 @@ class CheckoutService {
           [booking.room_id]
         );
 
-        // Settle kitchen
-        await dbService.run(
-          `UPDATE kitchen_orders SET status = 'Settled'
-           WHERE booking_id = ?`,
-          [bookingId]
-        );
-
-        // Create billing
+        // ✅ Create billing (already correct)
         const billingResult = await dbService.run(
           `INSERT INTO billings (
             booking_id, idempotency_key, customer_id, room_id,
             check_in, check_out, advance_paid, total_amount,
             gst_number, billed_by_id, billed_by_name, billed_by_role
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?)`,
           [
-            booking.id,
+            booking.booking_id, // ✅ CORRECT
             key,
             booking.customer_id,
             booking.room_id,
             booking.check_in,
-            new Date().toISOString(),
             booking.advance_paid || 0,
-            expectedTotal, // ✅ ALWAYS TRUST BACKEND
+            expectedTotal,
             gst_number || null,
             user.id,
             user.name,
@@ -156,6 +148,14 @@ class CheckoutService {
           stayDays
         );
 
+        // ✅ Settle kitchen after line-item capture
+        await dbService.run(
+          `UPDATE kitchen_orders SET status = 'Settled'
+           WHERE booking_id = ?
+           AND status = 'Served'`,
+          [booking.booking_id]
+        );
+
         return billingResult.lastID;
       });
 
@@ -164,7 +164,7 @@ class CheckoutService {
         billing_id: billingId,
         idempotency_key: key,
         summary: {
-          booking_id: booking.id,
+          booking_id: booking.booking_id, // ✅ FIXED
           total_amount: expectedTotal,
           balance: expectedTotal - (booking.advance_paid || 0),
         },
@@ -192,9 +192,10 @@ class CheckoutService {
       total: roomSubtotal,
     });
 
+    // ✅ FIXED addons fetch
     const addons = await dbService.all(
       `SELECT name, price FROM booking_addons WHERE booking_id = ?`,
-      [booking.id]
+      [booking.booking_id]
     );
 
     for (const addon of addons) {
@@ -207,6 +208,27 @@ class CheckoutService {
         subtotal: Number(addon.price),
         gst_rate: DEFAULT_GST_RATES.addon,
         total: Number(addon.price),
+      });
+    }
+
+    // Kitchen (already correct)
+    const kitchenOrders = await dbService.getKitchenOrdersForBilling(
+      booking.booking_id
+    );
+
+    for (const order of kitchenOrders) {
+      const itemTotal =
+        Number(order.item_price || 0) * Number(order.quantity || 1);
+
+      lines.push({
+        billing_id: billingId,
+        type: "kitchen",
+        description: `${order.item_name} × ${order.quantity}`,
+        quantity: order.quantity,
+        unit_price: Number(order.item_price || 0),
+        subtotal: itemTotal,
+        gst_rate: DEFAULT_GST_RATES.kitchen,
+        total: itemTotal,
       });
     }
 

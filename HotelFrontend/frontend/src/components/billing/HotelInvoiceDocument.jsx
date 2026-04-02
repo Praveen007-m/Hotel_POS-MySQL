@@ -380,10 +380,19 @@ export const HotelInvoiceDocument = ({
   // GST logic
   const roomPrice = Number(form?.room_price || 0);
   const addOns = Array.isArray(form?.add_ons) ? form.add_ons : [];
+  
+  // ✅ GET KITCHEN ITEMS FROM SELECTED BILL LINES
+  let kitchenItems = [];
+  if (selectedBill?.lines?.kitchen && Array.isArray(selectedBill.lines.kitchen)) {
+    kitchenItems = selectedBill.lines.kitchen;
+  }
 
   const roomGstAmount = Number(gstAmounts?.room || 0);
   const addonGstAmount = Number(gstAmounts?.addon || 0);
-  const totalGstAmount = roomGstAmount + addonGstAmount;
+  const kitchenGstAmount = Number(gstAmounts?.kitchen || 0);
+
+  // ✅ INCLUDE KITCHEN GST IN TOTAL
+  const totalGstAmount = roomGstAmount + addonGstAmount + kitchenGstAmount;
 
   const roomDiscountVal = Number(form?.discount || 0);
   const discountedRoomTariff = Math.max(0, roomPrice - roomDiscountVal);
@@ -532,6 +541,22 @@ export const HotelInvoiceDocument = ({
                 <Text style={styles.col3}>{addonTotal.toFixed(2)}</Text>
                 <Text style={styles.col4}>0.00</Text>
                 <Text style={styles.col5}>{addonTotal.toFixed(2)}</Text>
+              </View>
+            );
+          })}
+
+          {/* ✅ KITCHEN ITEMS ROWS */}
+          {kitchenItems.map((item, i) => {
+            const itemTotal = Number(item.subtotal || 0);
+            return (
+              <View style={styles.tableRow} key={`kitchen-${i}`}>
+                <Text style={styles.col1}>{lineItemDateOnly}</Text>
+                <Text style={styles.col2}>
+                  {item.description || item.name} (Qty: {item.quantity})
+                </Text>
+                <Text style={styles.col3}>{itemTotal.toFixed(2)}</Text>
+                <Text style={styles.col4}>0.00</Text>
+                <Text style={styles.col5}>{itemTotal.toFixed(2)}</Text>
               </View>
             );
           })}

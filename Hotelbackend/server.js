@@ -105,42 +105,26 @@ const schemaPath = path.join(__dirname, "db/schema.sql");
 
 // ================= SEED ADMIN USER =================
 async function seedAdminUser() {
-  return new Promise((resolve) => {
-    const email = process.env.ADMIN_EMAIL || "admin@hotel.com";
-    const password = process.env.ADMIN_PASSWORD || "Admin@2025#";
-    const name = process.env.ADMIN_NAME || "Admin";
+  const email = process.env.ADMIN_EMAIL || "admin@hotel.com";
+  const password = process.env.ADMIN_PASSWORD || "Admin@2025#";
+  const name = process.env.ADMIN_NAME || "Admin";
 
-    db.get("SELECT id FROM users WHERE email = ?", [email], async (err, row) => {
-      if (err) {
-        console.error("❌ Seed check error:", err.message);
-        return resolve();
-      }
+  try {
+    const [rows] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
+    if (Array.isArray(rows) && rows.length > 0) {
+      console.log("✅ Admin user already exists");
+      return;
+    }
 
-      if (row) {
-        console.log("✅ Admin user already exists");
-        return resolve();
-      }
-
-      try {
-        const hashed = await bcrypt.hash(password, 10);
-        db.run(
-          "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
-          [name, email, hashed, "admin"],
-          (insertErr) => {
-            if (insertErr) {
-              console.error("❌ Seed admin error:", insertErr.message);
-            } else {
-              console.log("✅ Admin user seeded:", email);
-            }
-            resolve();
-          }
-        );
-      } catch (bcryptErr) {
-        console.error("❌ bcrypt error:", bcryptErr.message);
-        resolve();
-      }
-    });
-  });
+    const hashed = await bcrypt.hash(password, 10);
+    await db.query(
+      "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
+      [name, email, hashed, "admin"]
+    );
+    console.log("✅ Admin user seeded:", email);
+  } catch (err) {
+    console.error("❌ Seed admin error:", err.message || err);
+  }
 }
 
 // ================= INIT DATABASE =================
@@ -161,29 +145,32 @@ async function initDatabase() {
       .filter((s) => s.length > 0);
 
     for (const stmt of statements) {
-      await new Promise((resolve, reject) => {
-        db.run(stmt, (err) => {
-          if (err) {
-            // Non-fatal: table or index already exists
-            if (
-              err.message.includes("already exists") ||
-              err.message.includes("duplicate column")
-            ) {
-              return resolve();
-            }
-            console.error("❌ Schema error:", err.message);
-            console.error("   SQL:", stmt.substring(0, 120));
-            return reject(err);
-          }
-          resolve();
-        });
-      });
+      try {
+        await db.query(stmt);
+      } catch (err) {
+        const errMsg = (err?.message || "").toLowerCase();
+        const errCode = err?.code || "";
+        
+        // Skip benign errors (table/column/index already exists)
+        if (
+          errMsg.includes("already exists") ||
+          errMsg.includes("duplicate column") ||
+          errMsg.includes("check constraint") ||
+          errCode === "ER_DUP_KEYNAME" // duplicate index name
+        ) {
+          continue;
+        }
+        
+        console.error("❌ Schema error:", err.message || err);
+        console.error("   SQL:", stmt.substring(0, 120));
+        throw err;
+      }
     }
 
     console.log("✅ Base schema applied");
 
     // ── Step 2: Run migrations (adds missing columns to existing tables) ──
-    await runMigrations(); // ✅ uses db/migrate.js
+    await runMigrations();
 
     // ── Step 3: Seed default admin user ───────────────────────────────────
     await seedAdminUser();
@@ -191,7 +178,7 @@ async function initDatabase() {
     console.log("✅ Database initialized successfully");
     isDbReady = true;
   } catch (err) {
-    console.error("❌ DB Init Error:", err.message);
+    console.error("❌ DB Init Error:", err.message || err);
     // isDbReady stays false → 503 middleware handles requests gracefully
   }
 }

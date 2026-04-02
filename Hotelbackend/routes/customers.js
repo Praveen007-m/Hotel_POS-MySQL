@@ -2,42 +2,40 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/database");
 const multer = require("multer");
-const path = require("path");
 
 // ================= MULTER CONFIG =================
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
 
 const upload = multer({ storage });
 
 // ================= GET ALL CUSTOMERS =================
-router.get("/", (req, res) => {
-  db.all("SELECT * FROM customers ORDER BY id DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+router.get("/", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM customers ORDER BY id DESC");
     res.json(rows);
-  });
+  } catch (err) {
+    console.error("GET CUSTOMERS ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ================= GET CUSTOMER BY ID =================
-router.get("/:id", (req, res) => {
-  db.get(
-    "SELECT * FROM customers WHERE id = ?",
-    [req.params.id],
-    (err, row) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json(row);
-    }
-  );
+router.get("/:id", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM customers WHERE id = ?", [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: "Customer not found" });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("GET CUSTOMER ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ================= CREATE CUSTOMER =================
-router.post("/", upload.single("document"), (req, res) => {
+router.post("/", upload.single("document"), async (req, res) => {
   const {
     name,
     contact,
@@ -49,55 +47,51 @@ router.post("/", upload.single("document"), (req, res) => {
     dob,
   } = req.body;
 
-  // 🔴 REQUIRED VALIDATION
   if (!name || !contact) {
-    return res.status(400).json({
-      message: "Name and mobile number are mandatory",
-    });
+    return res.status(400).json({ message: "Name and mobile number are mandatory" });
   }
 
   const document = req.file ? `uploads/${req.file.filename}` : null;
 
-  const query = `
-    INSERT INTO customers
-    (name, contact, email, id_type, id_number, address, vehicle_no, dob, document)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  db.run(
-    query,
-    [
-      name,
-      contact,
-      email || null,
-      id_type || null,
-      id_number || null,
-      address || null,
-      vehicle_no || null,
-      dob || null,
-      document,
-    ],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({
-        id: this.lastID,
+  try {
+    const [result] = await db.query(
+      `INSERT INTO customers
+       (name, contact, email, id_type, id_number, address, vehicle_no, dob, document)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
         name,
         contact,
-        email: email || null,
-        id_type: id_type || null,
-        id_number: id_number || null,
-        address: address || null,
-        vehicle_no: vehicle_no || null,
-        dob: dob || null,
+        email || null,
+        id_type || null,
+        id_number || null,
+        address || null,
+        vehicle_no || null,
+        dob || null,
         document,
-        message: "Customer added",
-      });
-    }
-  );
+      ]
+    );
+
+    res.json({
+      id: result.insertId,
+      name,
+      contact,
+      email: email || null,
+      id_type: id_type || null,
+      id_number: id_number || null,
+      address: address || null,
+      vehicle_no: vehicle_no || null,
+      dob: dob || null,
+      document,
+      message: "Customer added",
+    });
+  } catch (err) {
+    console.error("CREATE CUSTOMER ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ================= UPDATE CUSTOMER =================
-router.put("/:id", upload.single("document"), (req, res) => {
+router.put("/:id", upload.single("document"), async (req, res) => {
   const {
     name,
     contact,
@@ -109,11 +103,8 @@ router.put("/:id", upload.single("document"), (req, res) => {
     dob,
   } = req.body;
 
-  // 🔴 REQUIRED VALIDATION
   if (!name || !contact) {
-    return res.status(400).json({
-      message: "Name and mobile number are mandatory",
-    });
+    return res.status(400).json({ message: "Name and mobile number are mandatory" });
   }
 
   const document = req.file ? `uploads/${req.file.filename}` : null;
@@ -127,8 +118,7 @@ router.put("/:id", upload.single("document"), (req, res) => {
       id_number = ?,
       address = ?,
       vehicle_no = ?,
-      dob = ?
-  `;
+      dob = ?`;
 
   const params = [
     name,
@@ -142,25 +132,35 @@ router.put("/:id", upload.single("document"), (req, res) => {
   ];
 
   if (document) {
-    query += `, document = ?`;
+    query += ", document = ?";
     params.push(document);
   }
 
-  query += ` WHERE id = ?`;
+  query += " WHERE id = ?";
   params.push(req.params.id);
 
-  db.run(query, params, function (err) {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const [result] = await db.query(query, params);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
     res.json({ message: "Customer updated" });
-  });
+  } catch (err) {
+    console.error("UPDATE CUSTOMER ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ================= DELETE CUSTOMER =================
-router.delete("/:id", (req, res) => {
-  db.run("DELETE FROM customers WHERE id = ?", [req.params.id], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
+router.delete("/:id", async (req, res) => {
+  try {
+    const [result] = await db.query("DELETE FROM customers WHERE id = ?", [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Customer not found" });
     res.json({ message: "Customer deleted" });
-  });
+  } catch (err) {
+    console.error("DELETE CUSTOMER ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

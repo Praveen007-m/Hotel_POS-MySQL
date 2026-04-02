@@ -1,198 +1,210 @@
 -- ================== ROOMS ==================
 CREATE TABLE IF NOT EXISTS rooms (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    room_number TEXT UNIQUE NOT NULL,
-    category TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Available',
-    price_per_night REAL NOT NULL,
-    capacity INTEGER DEFAULT 2,
-    amenities TEXT DEFAULT '{}',
-    add_ons TEXT DEFAULT '{}'
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    room_number VARCHAR(255) UNIQUE NOT NULL,
+    category VARCHAR(255) NOT NULL,
+    status VARCHAR(255) NOT NULL DEFAULT 'Available',
+    price_per_night DECIMAL(10,2) NOT NULL,
+    capacity INT DEFAULT 2,
+    amenities TEXT,
+    add_ons TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== CUSTOMERS ==================
 CREATE TABLE IF NOT EXISTS customers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    contact TEXT NOT NULL,
-    email TEXT,
-    id_type TEXT,
-    id_number TEXT,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    contact VARCHAR(50) NOT NULL,
+    email VARCHAR(255),
+    id_type VARCHAR(255),
+    id_number VARCHAR(255),
     address TEXT,
-    vehicle_no TEXT,
-    dob TEXT,
-    document TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+    vehicle_no VARCHAR(255),
+    dob DATE,
+    document VARCHAR(1024),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== BOOKINGS ==================
 CREATE TABLE IF NOT EXISTS bookings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    booking_id TEXT UNIQUE NOT NULL,
-    customer_id INTEGER NOT NULL,
-    room_id INTEGER NOT NULL,
-    check_in TEXT NOT NULL,
-    check_out TEXT,
-    status TEXT NOT NULL DEFAULT 'Confirmed',
-    price REAL,
-    -- ✅ All columns required by booking routes
-    advance_paid REAL DEFAULT 0,
-    add_ons TEXT DEFAULT '[]',
-    people_count INTEGER DEFAULT 1,
-    created_by_id INTEGER,
-    created_by_name TEXT,
-    created_by_role TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    booking_id VARCHAR(255) UNIQUE NOT NULL,
+    customer_id INT NOT NULL,
+    room_id INT NOT NULL,
+    check_in DATETIME NOT NULL,
+    check_out DATETIME,
+    status VARCHAR(255) NOT NULL DEFAULT 'Confirmed',
+    price DECIMAL(10,2),
+    advance_paid DECIMAL(10,2) DEFAULT 0,
+    add_ons TEXT,
+    people_count INT DEFAULT 1,
+    created_by_id INT,
+    created_by_name VARCHAR(255),
+    created_by_role VARCHAR(255),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (customer_id) REFERENCES customers(id),
     FOREIGN KEY (room_id) REFERENCES rooms(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== CATEGORIES ==================
 CREATE TABLE IF NOT EXISTS categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== MENU ITEMS ==================
 CREATE TABLE IF NOT EXISTS menu_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    category TEXT NOT NULL,
-    price REAL NOT NULL,
-    stock INTEGER DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'Pending',
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    category VARCHAR(255) NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    stock INT DEFAULT 0,
+    status VARCHAR(255) NOT NULL DEFAULT 'Pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== KITCHEN ORDERS ==================
 CREATE TABLE IF NOT EXISTS kitchen_orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    room_id INTEGER NOT NULL,
-    booking_id TEXT,
-    item_id INTEGER NOT NULL,
-    quantity INTEGER NOT NULL DEFAULT 1,
-    status TEXT NOT NULL DEFAULT 'Pending',
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    room_id INT NOT NULL,
+    booking_id VARCHAR(255),
+    item_id INT NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    status VARCHAR(255) NOT NULL DEFAULT 'Pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (room_id) REFERENCES rooms(id),
     FOREIGN KEY (item_id) REFERENCES menu_items(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== ADD ONS ==================
 CREATE TABLE IF NOT EXISTS add_ons (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    price REAL NOT NULL
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== BILLINGS ==================
 CREATE TABLE IF NOT EXISTS billings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    booking_id TEXT,
-    idempotency_key TEXT UNIQUE,
-    customer_id INTEGER,
-    room_id INTEGER,
-    check_in TEXT,
-    check_out TEXT,
-    advance_paid REAL DEFAULT 0,
-    total_amount REAL NOT NULL,
-    gst_number TEXT,
-    is_downloaded INTEGER DEFAULT 0,
-    billed_by_id INTEGER,
-    billed_by_name TEXT,
-    billed_by_role TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    booking_id VARCHAR(255),
+    idempotency_key VARCHAR(255) UNIQUE,
+    customer_id INT,
+    room_id INT,
+    check_in DATETIME,
+    check_out DATETIME,
+    advance_paid DECIMAL(10,2) DEFAULT 0,
+    total_amount DECIMAL(10,2) NOT NULL,
+    gst_number VARCHAR(255),
+    is_downloaded TINYINT(1) DEFAULT 0,
+    billed_by_id INT,
+    billed_by_name VARCHAR(255),
+    billed_by_role VARCHAR(255),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (room_id) REFERENCES rooms(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== INVOICES (Line Items) ==================
 CREATE TABLE IF NOT EXISTS invoices (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    billing_id INTEGER NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('room', 'kitchen', 'addon', 'gst', 'discount')),
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    billing_id INT NOT NULL,
+    type ENUM('room','kitchen','addon','gst','discount') NOT NULL,
     description TEXT NOT NULL,
-    quantity INTEGER DEFAULT 1,
-    unit_price REAL NOT NULL,
-    subtotal REAL NOT NULL,
-    gst_rate REAL DEFAULT 0,
-    gst_amount REAL DEFAULT 0,
-    total REAL NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
+    quantity INT DEFAULT 1,
+    unit_price DECIMAL(10,2) NOT NULL,
+    subtotal DECIMAL(10,2) NOT NULL,
+    gst_rate DECIMAL(10,2) DEFAULT 0,
+    gst_amount DECIMAL(10,2) DEFAULT 0,
+    total DECIMAL(10,2) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (billing_id) REFERENCES billings(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== BOOKING ADD ONS ==================
 CREATE TABLE IF NOT EXISTS booking_addons (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    booking_id TEXT NOT NULL,
-    addon_id INTEGER,
-    name TEXT NOT NULL,
-    price REAL NOT NULL,
-    quantity INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    booking_id VARCHAR(255) NOT NULL,
+    addon_id INT,
+    name VARCHAR(255) NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (addon_id) REFERENCES add_ons(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== EXPENSES ==================
 CREATE TABLE IF NOT EXISTS expenses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    amount REAL NOT NULL,
-    category TEXT NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    category VARCHAR(255) NOT NULL,
     expense_date DATE NOT NULL,
     notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== GST SETTINGS ==================
 CREATE TABLE IF NOT EXISTS gst_settings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category TEXT UNIQUE NOT NULL,
-    gst_rate REAL NOT NULL DEFAULT 0
-);
-
--- ================== USERS ==================
--- ✅ staff_id added — required for staff route JOIN: users u ON u.staff_id = s.id
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'staff', 'kitchen')),
-    staff_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category VARCHAR(255) UNIQUE NOT NULL,
+    gst_rate DECIMAL(10,2) NOT NULL DEFAULT 0,
+    is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== STAFF ==================
--- ✅ email and UNIQUE name removed — staff route does NOT insert email into staff table
---    email lives only in the users table. Keeping UNIQUE on name can cause collisions.
 CREATE TABLE IF NOT EXISTS staff (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    phone TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) NOT NULL DEFAULT '',
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ================== USERS ==================
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role ENUM('admin','staff','kitchen') NOT NULL,
+    staff_id INT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== RESTAURANT ORDERS ==================
 CREATE TABLE IF NOT EXISTS restaurant_orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    table_number INTEGER NOT NULL,
-    item_id INTEGER NOT NULL,
-    quantity INTEGER NOT NULL CHECK (quantity >= 1),
-    status TEXT NOT NULL CHECK (
-        status IN ('Pending', 'Preparing', 'Served')
-    ) DEFAULT 'Pending',
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    table_number INT NOT NULL,
+    item_id INT NOT NULL,
+    quantity INT NOT NULL CHECK (quantity >= 1),
+    status ENUM('Pending','Preparing','Served') NOT NULL DEFAULT 'Pending',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (item_id) REFERENCES menu_items(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ================== INDEXES ==================
--- ✅ All indexes at the END — after all tables exist
-CREATE INDEX IF NOT EXISTS idx_billings_booking ON billings(booking_id);
-CREATE INDEX IF NOT EXISTS idx_billings_idempotency ON billings(idempotency_key);
-CREATE INDEX IF NOT EXISTS idx_invoices_billing ON invoices(billing_id);
-CREATE INDEX IF NOT EXISTS idx_booking_addons_booking ON booking_addons(booking_id);
+-- server.js catches ER_DUP_KEYNAME so these are safe on re-runs
+CREATE INDEX idx_billings_booking ON billings(booking_id);
+CREATE INDEX idx_billings_idempotency ON billings(idempotency_key);
+CREATE INDEX idx_invoices_billing ON invoices(billing_id);
+CREATE INDEX idx_booking_addons_booking ON booking_addons(booking_id);

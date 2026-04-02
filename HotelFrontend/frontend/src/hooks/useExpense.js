@@ -35,17 +35,49 @@ const useExpense = () => {
 const addExpense = async (data) => {
   try {
     setLoading(true);
-    const res = await axios.post(`${API_BASE_URL}/api/expenses`, data);
 
-    // 🔥 Push new expense directly
+    console.log("DATA RECEIVED:", data); // 🔍 DEBUG
+
+    let formattedDate = "";
+
+    if (data.date) {
+      // Case 1: DD-MM-YYYY
+      if (data.date.includes("-")) {
+        const [day, month, year] = data.date.split("-");
+        formattedDate = `${year}-${month}-${day}`;
+      } else {
+        // Case 2: already valid
+        formattedDate = data.date;
+      }
+    } else if (data.expense_date) {
+      // Case 3: already correct field
+      formattedDate = data.expense_date;
+    } else {
+      throw new Error("Date is missing");
+    }
+
+    const payload = {
+      title: data.title,
+      amount: Number(data.amount),
+      category: data.category,
+      expense_date: formattedDate,
+    };
+
+    const res = await axios.post(
+      `${API_BASE_URL}/api/expenses`,
+      payload
+    );
+
     setExpenses((prev) => [
       {
         id: res.data.id,
-        ...data,
+        ...payload,
       },
       ...prev,
     ]);
+
   } catch (err) {
+    console.error("ADD EXPENSE ERROR:", err);
     setError(err.message || "Failed to add expense");
     throw err;
   } finally {

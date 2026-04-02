@@ -41,7 +41,7 @@ class InvoiceService {
       lines: groupedLines,
       totals,
       nights: this._calculateNights(billing.check_in, billing.check_out),
-      balance: billing.total_amount - (billing.advance_paid || 0),
+      balance: Number(billing.total_amount || 0) - Number(billing.advance_paid || 0),
       hotel_gst: HOTEL_GST_NUMBER
     };
   }
@@ -79,19 +79,23 @@ class InvoiceService {
     let subtotal = 0;
     let gstTotal = 0;
 
-    // Sum subtotals
     for (const type in lines) {
       for (const line of lines[type]) {
-        subtotal += line.subtotal;
-        gstTotal += line.gst_amount || 0;
+        subtotal += Number(line.subtotal || 0);      // ✅ FIX
+        gstTotal += Number(line.gst_amount || 0);    // ✅ FIX
       }
     }
 
+    const safeSubtotal = Number(subtotal);
+    const safeGst = Number(gstTotal);
+
     return {
-      subtotal: Number(subtotal.toFixed(2)),
-      gst_total: Number(gstTotal.toFixed(2)),
-      grand_total: Number(grandTotal),
-      gst_rate_avg: Number((gstTotal / subtotal * 100 || 0).toFixed(1))
+      subtotal: Number(safeSubtotal.toFixed(2)),
+      gst_total: Number(safeGst.toFixed(2)),
+      grand_total: Number(grandTotal || 0),
+      gst_rate_avg: safeSubtotal > 0
+        ? Number(((safeGst / safeSubtotal) * 100).toFixed(1))
+        : 0
     };
   }
 

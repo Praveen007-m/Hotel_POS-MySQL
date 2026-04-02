@@ -92,7 +92,7 @@ exports.getKitchenOrders = (req, res) => {
       r.category AS room_category,
       r.price_per_night,
 
-      b.booking_id,
+      ko.booking_id,
       b.customer_id,
       b.check_in,
       b.check_out,
@@ -109,7 +109,7 @@ exports.getKitchenOrders = (req, res) => {
 
     FROM kitchen_orders ko
     JOIN rooms r ON ko.room_id = r.id
-    LEFT JOIN bookings b ON ko.room_id = b.room_id AND b.status IN ('Confirmed', 'Checked-in')
+    LEFT JOIN bookings b ON ko.booking_id = b.booking_id
     LEFT JOIN customers c ON b.customer_id = c.id
     JOIN menu_items mi ON ko.item_id = mi.id
 
@@ -119,7 +119,8 @@ exports.getKitchenOrders = (req, res) => {
   const params = [];
 
   if (booking_id) {
-    query += ` AND b.booking_id = ?`;
+    // ✅ For checkout: only include 'Served' orders
+    query += ` AND ko.booking_id = ? AND ko.status = 'Served'`;
     params.push(booking_id);
   }
 
@@ -172,7 +173,11 @@ exports.createKitchenOrder = (req, res) => {
     );
   } else if (room_id) {
     db.get(
-      "SELECT booking_id FROM bookings WHERE room_id = ? AND status IN ('Confirmed','Checked-in')",
+      `SELECT booking_id
+       FROM bookings
+       WHERE room_id = ? AND status IN ('Confirmed','Checked-in')
+       ORDER BY id DESC
+       LIMIT 1`,
       [room_id],
       (err, booking) => {
         if (err) {
@@ -352,7 +357,7 @@ exports.deleteKitchenOrdersByBooking = (req, res) => {
 exports.getOrdersByBooking = (req, res) => {
   const query = `
     SELECT 
-      b.booking_id,
+      ko.booking_id,
       r.room_number,
       c.name AS customer_name,
       COUNT(ko.id) as order_count,
@@ -361,14 +366,14 @@ exports.getOrdersByBooking = (req, res) => {
       
     FROM kitchen_orders ko
     JOIN rooms r ON ko.room_id = r.id
-    JOIN bookings b ON ko.room_id = b.room_id AND b.status IN ('Confirmed', 'Checked-in')
-    JOIN customers c ON b.customer_id = c.id
+    LEFT JOIN bookings b ON ko.booking_id = b.booking_id
+    LEFT JOIN customers c ON b.customer_id = c.id
     JOIN menu_items mi ON ko.item_id = mi.id
     
     WHERE ko.status = 'Served'
     
-    GROUP BY b.booking_id
-    ORDER BY b.booking_id
+    GROUP BY ko.booking_id
+    ORDER BY ko.booking_id
   `;
 
   db.all(query, [], (err, rows) => {

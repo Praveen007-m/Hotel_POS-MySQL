@@ -176,10 +176,11 @@ export default function RestaurantOrderList({ user }) {
 
 
       // âœ… THEN prepare bill data
-      const subtotal = group.orders.reduce(
-        (sum, o) => sum + o.quantity * o.price,
-        0
-      );
+      const subtotal = group.orders.reduce((sum, o) => {
+        const qty = Number(o.quantity || 0);
+        const price = Number(o.price || 0);
+        return sum + qty * price;
+      }, 0);
 
       const tax = subtotal * 0.05;
       const total = subtotal + tax;
@@ -188,12 +189,16 @@ export default function RestaurantOrderList({ user }) {
         identifier,
         customer_name:
           group.orders[0]?.customer_name || `Table ${identifier}`,
-        items: group.orders.map((o) => ({
+        items: group.orders.map((o) => {
+          const qty = Number(o.quantity || 0);
+          const price = Number(o.price || 0);
+          return {
           item_name: o.item_name,
-          quantity: o.quantity,
-          price: o.price,
-          total: o.quantity * o.price,
-        })),
+          quantity: qty,
+          price,
+          total: qty * price,
+          };
+        }),
         subtotal,
         tax,
         total,

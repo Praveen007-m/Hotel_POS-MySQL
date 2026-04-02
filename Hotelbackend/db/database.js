@@ -1,93 +1,75 @@
-const sqlite3 = require("sqlite3").verbose();
-const path = require("path");
-const fs = require("fs");
+const mysql = require("mysql2/promise");
 
-const isProd = process.env.NODE_ENV === "production";
-const configuredDbPath = process.env.SQLITE_DB_PATH;
-const volumeMountPath = process.env.RAILWAY_VOLUME_MOUNT_PATH;
-const bundledDbPath = path.join(__dirname, "hotel.db");
-const seedDbPath = process.env.SQLITE_SEED_PATH || bundledDbPath;
-const importBundledDb =
-  process.env.SQLITE_IMPORT_ON_BOOT === "true" ||
-  process.env.SQLITE_IMPORT_ON_BOOT === "1";
+const host = process.env.MYSQL_HOST || process.env.DB_HOST || "localhost";
+const user = process.env.MYSQL_USER || process.env.DB_USER || "root";
+const password = process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || "root";
+const database = process.env.MYSQL_DATABASE || process.env.DB_DATABASE || "hotel_pos";
+const port = process.env.MYSQL_PORT
+  ? Number(process.env.MYSQL_PORT)
+  : process.env.DB_PORT
+  ? Number(process.env.DB_PORT)
+  : 3306;
 
-let dbPath;
+const pool = mysql.createPool({
+  host,
+  user,
+  password,
+  database,
+  port,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  charset: "utf8mb4_unicode_ci",
+});
 
-if (configuredDbPath) {
-  dbPath = configuredDbPath;
-} else if (isProd && volumeMountPath) {
-  dbPath = path.join(volumeMountPath, "hotel.db");
-} else if (isProd) {
-  dbPath = "/tmp/hotel.db";
-} else {
-  dbPath = bundledDbPath;
-}
-
-console.log("📁 Using DB Path:", dbPath);
-console.log("📦 Seed DB Path:", seedDbPath);
-console.log("📦 Import on boot enabled:", importBundledDb);
-console.log("📦 Seed DB exists:", fs.existsSync(seedDbPath));
-console.log("📦 Target DB exists before connect:", fs.existsSync(dbPath));
-
-try {
-  const dbDir = path.dirname(dbPath);
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+async function testConnection() {
+  try {
+    const connection = await pool.getConnection();
+    await connection.ping();
+    console.log("✅ MySQL connected");
+    connection.release();
+  } catch (err) {
+    console.error("❌ MySQL connection error:", err);
   }
-} catch (err) {
-  console.error("❌ Failed to create DB directory:", err);
 }
 
-if (isProd && dbPath !== seedDbPath && fs.existsSync(seedDbPath)) {
-  const targetExists = fs.existsSync(dbPath);
+testConnection();
 
-  if (importBundledDb && !targetExists) {
+pool.on("error", (err) => {
+  console.error("💥 MySQL Pool Error:", err);
+});
+
+module.exports = {
+  query: (...args) => pool.query(...args),
+  get: async (sql, params, callback) => {
     try {
-      fs.copyFileSync(seedDbPath, dbPath);
-      console.log(`✅ Seed DB copied from ${seedDbPath} to ${dbPath}`);
+      const [rows] = await pool.query(sql, params || []);
+      callback(null, rows[0] || undefined);
     } catch (err) {
-      console.error("❌ Failed to seed DB file:", err);
+      callback(err);
     }
-  } else if (importBundledDb) {
-    console.log("📦 Seed DB copy skipped:", {
-      samePath: dbPath === seedDbPath,
-      targetExists,
-      seedExists: fs.existsSync(seedDbPath),
-    });
-  }
-} else if (isProd && importBundledDb) {
-  console.log("📦 Seed DB copy skipped:", {
-    samePath: dbPath === seedDbPath,
-    targetExists: fs.existsSync(dbPath),
-    seedExists: fs.existsSync(seedDbPath),
-  });
-}
-
-const db = new sqlite3.Database(
-  dbPath,
-  sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
-  (err) => {
-    if (err) {
-      console.error("❌ DB Connection Error:", err);
-    } else {
-      console.log("✅ SQLite connected");
+  },
+  all: async (sql, params, callback) => {
+    try {
+      const [rows] = await pool.query(sql, params || []);
+      callback(null, rows);
+    } catch (err) {
+      callback(err);
     }
-  }
-);
-
-db.serialize(() => {
-  if (!isProd) {
-    db.run("PRAGMA journal_mode = WAL;");
-  } else {
-    db.run("PRAGMA journal_mode = DELETE;");
-  }
-
-  db.run("PRAGMA synchronous = NORMAL;");
-  db.run("PRAGMA busy_timeout = 5000;");
-});
-
-db.on("error", (err) => {
-  console.error("💥 SQLite Runtime Error:", err);
-});
-
-module.exports = db;
+  },
+  run: async (sql, params, callback) => {
+    try {
+      const [result] = await pool.query(sql, params || []);
+      const info = {
+        lastID: result.insertId,
+        changes: result.affectedRows,
+      };
+      if (callback) callback(null, info);
+      return info;
+    } catch (err) {
+      if (callback) callback(err);
+      else throw err;
+    }
+  },
+  pool,
+};

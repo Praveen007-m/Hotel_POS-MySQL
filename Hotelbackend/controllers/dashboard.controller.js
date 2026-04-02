@@ -92,7 +92,9 @@ exports.getSummary = async (req, res) => {
       recentCheckins: recentCheckins.map((row) => ({
         name: row.name,
         room: row.room,
-        date: row.date ? row.date.slice(0, 10) : "",
+        date: row.date
+          ? new Date(row.date).toISOString().slice(0, 10)
+          : "",
       })),
       kitchenStatus,
     });
@@ -109,7 +111,7 @@ exports.getBookingTrend = async (req, res) => {
     const rows = await query(
       `SELECT DATE(check_in) AS day, COUNT(*) AS bookings
        FROM bookings
-       WHERE DATE(check_in) >= DATE('now', ?)
+       WHERE DATE(check_in) >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
        GROUP BY DATE(check_in)
        ORDER BY DATE(check_in)`,
       [`-${days} days`]

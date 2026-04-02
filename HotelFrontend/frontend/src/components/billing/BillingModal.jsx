@@ -369,7 +369,16 @@ const BillingModal = ({
             )}
 
             {kitchenTotal > 0 && (
-              <p><b>Kitchen Orders:</b> ₹{kitchenTotal.toFixed(2)}</p>
+              <>
+                <p><b>Kitchen Orders:</b> ₹{kitchenTotal.toFixed(2)}</p>
+                <ul className="list-disc ml-5">
+                  {(selectedBill.lines?.kitchen ?? []).map((k, i) => (
+                    <li key={i}>
+                      {k.description || `${k.item_name || "Item"} × ${k.quantity || 1}`} — ₹{Number(k.total || k.subtotal || 0).toFixed(2)}
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
 
             <p><b>Subtotal:</b> ₹{subtotal.toFixed(2)}</p>

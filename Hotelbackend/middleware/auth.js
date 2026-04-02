@@ -1,8 +1,9 @@
 const jwt = require("jsonwebtoken");
+const db = require("../db/database");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const requireAuth = (req, res, next) => {
+const requireAuth = async (req, res, next) => {
   let token = null;
 
   if (req.headers.authorization?.startsWith("Bearer ")) {
@@ -19,7 +20,36 @@ const requireAuth = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+
+    let name = null;
+
+    // 🔥 FETCH NAME BASED ON ROLE
+    if (decoded.role === "admin") {
+      const [rows] = await db.query(
+        "SELECT name FROM users WHERE id = ?",
+        [decoded.id]
+      );
+      name = rows[0]?.name || "Admin User";
+    }
+
+    if (decoded.role === "staff") {
+      const [rows] = await db.query(
+        `SELECT s.name 
+         FROM users u 
+         JOIN staff s ON u.staff_id = s.id 
+         WHERE u.id = ?`,
+        [decoded.id]
+      );
+      name = rows[0]?.name || "Staff";
+    }
+
+    // ✅ FINAL USER OBJECT
+    req.user = {
+      id: decoded.id,
+      role: decoded.role,
+      name: name,
+    };
+
     next();
   } catch (err) {
     console.error("JWT error:", err.message);

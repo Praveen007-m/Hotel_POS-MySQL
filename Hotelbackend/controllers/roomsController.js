@@ -1,5 +1,16 @@
 const db = require("../db/database");
 
+const safeParse = (value) => {
+  try {
+    if (!value) return {};
+    if (typeof value === "object") return value;
+    if (value === "[object Object]") return {};
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+};
+
 exports.getAllRooms = (req, res) => {
   db.all(
     `
@@ -18,8 +29,8 @@ exports.getAllRooms = (req, res) => {
 
       const rooms = rows.map(r => ({
         ...r,
-        amenities: JSON.parse(r.amenities || "{}"),
-        add_ons: JSON.parse(r.add_ons || "{}"),
+        amenities: safeParse(r.amenities),
+        add_ons: safeParse(r.add_ons),
         capacity: r.capacity,
         current_occupancy: r.current_occupancy
       }));
@@ -27,7 +38,6 @@ exports.getAllRooms = (req, res) => {
       res.json(rooms);
     }
   );
-
 };
 
 exports.getRoomById = (req, res) => {
@@ -35,7 +45,7 @@ exports.getRoomById = (req, res) => {
   db.get("SELECT * FROM rooms WHERE id = ?", [id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!row) return res.status(404).json({ error: "Room not found" });
-    res.json({ ...row, amenities: JSON.parse(row.amenities), add_ons: JSON.parse(row.add_ons) });
+    res.json({ ...row, amenities: safeParse(row.amenities), add_ons: safeParse(row.add_ons) });
   });
 };
 

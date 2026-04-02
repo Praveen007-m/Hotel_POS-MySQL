@@ -10,7 +10,7 @@ exports.createExpense = (req, res) => {
 
   db.run(
   `INSERT INTO expenses (title, amount, category, expense_date, created_at)
-   VALUES (?, ?, ?, ?, datetime('now'))`,
+   VALUES (?, ?, ?, ?, NOW())`,
   [title, amount, category || null, expense_date],
   function (err) {
     if (err) {

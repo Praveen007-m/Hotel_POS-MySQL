@@ -120,7 +120,7 @@ export default function BookingList({
     // Fetch kitchen orders
     let kitchenData = [];
     try {
-      const res = await auth.get(`/kitchen/orders?booking_id=${booking.id}`);
+      const res = await auth.get(`/kitchen/orders?booking_id=${booking.booking_id}`);
       kitchenData = res.data;
     } catch (err) {
       console.error(err);
@@ -328,8 +328,8 @@ export default function BookingList({
 
       {/* ══════════ CHECKOUT MODAL ══════════ */}
       {checkoutBooking && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl max-w-2xl w-full">
+        <div className="fixed inset-0 bg-black/40 flex justify-center z-50 overflow-y-auto p-4">
+          <div className="bg-white p-6 rounded-xl max-w-2xl w-full my-6 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-semibold mb-4">
               Final Checkout - Generate Bill & Settle Orders
             </h3>
@@ -416,22 +416,61 @@ export default function BookingList({
             {kitchenOrders.length > 0 && (
               <>
                 <p className="font-medium mb-2 mt-4">Kitchen Orders:</p>
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-3 mb-3 space-y-2">
                   {kitchenOrders.map((item, index) => (
-                    <span
-                      key={index}
-                      className="px-3 py-1 rounded bg-green-100 text-green-800 text-sm"
-                    >
-                      {item.item_name} × {item.quantity} (₹
-                      {item.price * item.quantity})
-                    </span>
+                    <div key={index} className="flex justify-between text-sm text-gray-700">
+                      <span>{item.item_name} × {item.quantity}</span>
+                      <span className="font-semibold text-green-700">
+                        ₹{(item.price * item.quantity).toFixed(2)}
+                      </span>
+                    </div>
                   ))}
+                  <div className="border-t border-green-200 pt-2 flex justify-between font-semibold text-green-800">
+                    <span>Kitchen Total:</span>
+                    <span>₹{checkoutData.kitchenTotal.toFixed(2)}</span>
+                  </div>
                 </div>
               </>
             )}
 
+            {/* Bill Summary */}
+            <div className="mt-4 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-4 space-y-2">
+              <h3 className="font-semibold text-gray-800 mb-3">Bill Summary</h3>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-700">Room Charges:</span>
+                <span className="font-medium">₹{(checkoutData.roomPrice * checkoutData.stayDays).toFixed(2)}</span>
+              </div>
+              {checkoutData.addOnsTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-700">Add-ons Total:</span>
+                  <span className="font-medium">₹{checkoutData.addOnsTotal.toFixed(2)}</span>
+                </div>
+              )}
+              {checkoutData.kitchenTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-700">Kitchen Total:</span>
+                  <span className="font-medium text-green-700">₹{checkoutData.kitchenTotal.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="border-t border-blue-200 pt-2 flex justify-between">
+                <span className="font-semibold text-gray-800">Total Amount:</span>
+                <span className="font-bold text-lg text-blue-700">₹{checkoutData.totalAmount.toFixed(2)}</span>
+              </div>
+              {checkoutData.advancePaid > 0 && (
+                <div className="flex justify-between text-sm text-green-600 mt-1">
+                  <span>Advance Paid:</span>
+                  <span>- ₹{checkoutData.advancePaid.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="border-t border-blue-200 pt-2 flex justify-between font-bold text-red-600">
+                <span>Balance Amount:</span>
+                <span className="text-lg">₹{checkoutData.balanceAmount.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Old Totals Display - Remove this section */}
             {/* Totals */}
-            <div className="mt-3 space-y-1">
+            {/* <div className="mt-3 space-y-1">
               <p className="text-lg font-semibold">
                 Total: ₹{checkoutData.totalAmount}
               </p>
@@ -441,7 +480,7 @@ export default function BookingList({
               <p className="text-lg font-bold text-red-600">
                 Balance Amount: ₹{checkoutData.balanceAmount}
               </p>
-            </div>
+            </div> */}
 
             {/* Actions */}
             <div className="flex justify-end gap-3 mt-4">

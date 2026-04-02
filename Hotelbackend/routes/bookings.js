@@ -3,54 +3,24 @@ const router = express.Router();
 const db = require("../db/database");
 const { requireAuth } = require("../middleware/auth");
 
-// Promisified db.run
-const runQuery = (query, params = []) =>
-  new Promise((resolve, reject) => {
-    db.run(query, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
-
-// Promisified db.get
-const getQuery = (query, params = []) =>
-  new Promise((resolve, reject) => {
-    db.get(query, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-
-// Promisified db.all
-const allQuery = (query, params = []) =>
-  new Promise((resolve, reject) => {
-    db.all(query, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-
-// ----------------- Routes -----------------
-// IMPORTANT: Specific routes BEFORE generic /:id routes
-
 // DEBUG - CHECK ROOM BY ID
-router.get("/debug/room/:roomId", requireAuth, (req, res) => {
-  db.get(
-    "SELECT id, room_number, category, status, price_per_night, capacity FROM rooms WHERE id = ?",
-    [req.params.roomId],
-    (err, row) => {
-      if (err) {
-        console.error("Debug room lookup error:", err.message);
-        return res.status(500).json({ error: err.message });
-      }
+router.get("/debug/room/:roomId", requireAuth, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT id, room_number, category, status, price_per_night, capacity FROM rooms WHERE id = ?",
+      [req.params.roomId]
+    );
+    const room = rows[0];
 
-      res.json({
-        requested_room_id: req.params.roomId,
-        found: Boolean(row),
-        room: row || null,
-      });
-    }
-  );
+    res.json({
+      requested_room_id: req.params.roomId,
+      found: Boolean(room),
+      room: room || null,
+    });
+  } catch (err) {
+    console.error("Debug room lookup error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET - BOOKINGS FOR CALENDAR VIEW
@@ -61,8 +31,8 @@ router.get("/calendar", requireAuth, async (req, res) => {
         b.id,
         b.booking_id,
         b.room_id,
-        datetime(b.check_in)  AS check_in,
-        datetime(b.check_out) AS check_out,
+        b.check_in AS check_in,
+        b.check_out AS check_out,
         b.status,
         r.room_number
       FROM bookings b
@@ -70,7 +40,7 @@ router.get("/calendar", requireAuth, async (req, res) => {
       WHERE b.status IN ('Confirmed', 'Checked-in')
       ORDER BY b.check_in ASC
     `;
-    const rows = await allQuery(query);
+    const [rows] = await db.query(query);
     res.json(rows);
   } catch (err) {
     console.error("Calendar fetch error:", err);
@@ -79,37 +49,37 @@ router.get("/calendar", requireAuth, async (req, res) => {
 });
 
 // GET - ALL BOOKINGS
-router.get("/", requireAuth, (req, res) => {
-  const query = `
-    SELECT
-      b.id,
-      b.booking_id,
-      b.check_in,
-      b.check_out,
-      b.status,
-      b.price,
-      b.advance_paid,
-      b.add_ons,
-      b.people_count,
-      b.created_by_id,
-      b.created_by_name,
-      b.created_by_role,
-      c.name    AS customer_name,
-      c.contact AS customer_contact,
-      r.room_number,
-      r.category AS room_category
-    FROM bookings b
-    JOIN customers c ON b.customer_id = c.id
-    JOIN rooms r ON b.room_id = r.id
-    ORDER BY b.id DESC
-  `;
-  db.all(query, [], (err, rows) => {
-    if (err) {
-      console.error("Get bookings error:", err.message);
-      return res.status(500).json({ error: err.message });
-    }
+router.get("/", requireAuth, async (req, res) => {
+  try {
+    const query = `
+      SELECT
+        b.id,
+        b.booking_id,
+        b.check_in,
+        b.check_out,
+        b.status,
+        b.price,
+        b.advance_paid,
+        b.add_ons,
+        b.people_count,
+        b.created_by_id,
+        b.created_by_name,
+        b.created_by_role,
+        c.name    AS customer_name,
+        c.contact AS customer_contact,
+        r.room_number,
+        r.category AS room_category
+      FROM bookings b
+      JOIN customers c ON b.customer_id = c.id
+      JOIN rooms r ON b.room_id = r.id
+      ORDER BY b.id DESC
+    `;
+    const [rows] = await db.query(query);
     res.json(rows);
-  });
+  } catch (err) {
+    console.error("Get bookings error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST - CREATE BOOKING
@@ -125,20 +95,17 @@ router.post("/", requireAuth, async (req, res) => {
       add_ons,
     } = req.body;
 
-    // ✅ Sanitize numeric fields — coerce to numbers regardless of what frontend sends
-    const price        = Number(req.body.price)        || 0;
+    const price = Number(req.body.price) || 0;
     const advance_paid = Number(req.body.advance_paid) || 0;
     const people_count = Number(req.body.people_count) || 1;
 
-    // ── Validation: check required fields FIRST before any DB calls ────────
     const missing = [];
-    if (!booking_id)  missing.push("booking_id");
+    if (!booking_id) missing.push("booking_id");
     if (!customer_id) missing.push("customer_id");
-    if (!room_id)     missing.push("room_id");
-    if (!price)       missing.push("price");
+    if (!room_id) missing.push("room_id");
+    if (!price) missing.push("price");
 
     if (missing.length > 0) {
-      console.warn("❌ Missing fields:", missing);
       return res.status(400).json({
         error: `Missing required fields: ${missing.join(", ")}`,
         missing,
@@ -146,71 +113,53 @@ router.post("/", requireAuth, async (req, res) => {
     }
 
     if (check_out && new Date(check_out) <= new Date(check_in)) {
-      return res.status(400).json({
-        error: "Check-out must be after check-in",
-      });
+      return res.status(400).json({ error: "Check-out must be after check-in" });
     }
 
-    // ── Get creator info from JWT ──────────────────────────────────────────
-    const created_by_id   = req.user.id;
+    const created_by_id = req.user.id;
     const created_by_role = req.user.role;
-    let   created_by_name = null;
+    let created_by_name = null;
 
     if (created_by_role === "admin") {
-      const admin = await getQuery("SELECT name FROM users WHERE id = ?", [created_by_id]);
-      created_by_name = admin?.name || "Admin";
+      const [adminRows] = await db.query("SELECT name FROM users WHERE id = ?", [created_by_id]);
+      created_by_name = adminRows[0]?.name || "Admin";
     }
 
     if (created_by_role === "staff") {
-      const staff = await getQuery(
+      const [staffRows] = await db.query(
         "SELECT s.name FROM users u JOIN staff s ON u.staff_id = s.id WHERE u.id = ?",
         [created_by_id]
       );
-      created_by_name = staff?.name || "Staff";
+      created_by_name = staffRows[0]?.name || "Staff";
     }
 
-    console.log("📝 Creating booking by:", { created_by_id, created_by_name, created_by_role });
-
-    // ── Date strings ───────────────────────────────────────────────────────
-    const checkInStr  = check_in  || new Date().toISOString().slice(0, 19);
+    const checkInStr = check_in || new Date().toISOString().slice(0, 19);
     const checkOutStr = check_out || null;
 
-    // ── Room existence check ───────────────────────────────────────────────
-    console.log("Booking room lookup input:", {
-      room_id,
-      booking_id,
-      customer_id,
-    });
-
-    const room = await getQuery("SELECT id, capacity FROM rooms WHERE id = ?", [room_id]);
-
-    console.log("Booking room lookup result:", room);
-
+    const [roomRows] = await db.query("SELECT id, capacity FROM rooms WHERE id = ?", [room_id]);
+    const room = roomRows[0];
     if (!room) {
       return res.status(400).json({ error: "Invalid room selected" });
     }
 
-    // ── Availability conflict check ────────────────────────────────────────
-    const availability = await getQuery(
+    const [availabilityRows] = await db.query(
       `SELECT COUNT(*) as conflictCount
        FROM bookings
        WHERE room_id = ?
          AND status IN ('Confirmed', 'Checked-in')
-         AND check_in  < ?
+         AND check_in < ?
          AND (check_out IS NULL OR check_out > ?)`,
       [room_id, checkOutStr || checkInStr, checkInStr]
     );
 
-    if (availability.conflictCount > 0) {
-      return res.status(409).json({
-        error: `Room is not available between ${checkInStr} and ${checkOutStr}`,
-      });
+    const conflictCount = availabilityRows[0]?.conflictCount || 0;
+    if (conflictCount > 0) {
+      return res.status(409).json({ error: `Room is not available between ${checkInStr} and ${checkOutStr}` });
     }
 
-    // ── Insert booking ─────────────────────────────────────────────────────
     const bookingStatus = status || "Confirmed";
 
-    const result = await runQuery(
+    const [insertResult] = await db.query(
       `INSERT INTO bookings
          (booking_id, customer_id, room_id, check_in, check_out, status,
           price, add_ons, people_count, advance_paid,
@@ -233,21 +182,18 @@ router.post("/", requireAuth, async (req, res) => {
       ]
     );
 
-    // ── Update room status ─────────────────────────────────────────────────
     const roomStatus = bookingStatus === "Checked-in" ? "Occupied" : "Booked";
-    await runQuery("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, room_id]);
-
-    console.log("✅ Booking created:", booking_id, "by", created_by_name);
+    await db.query("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, room_id]);
 
     res.status(201).json({
-      id: result.lastID,
+      id: insertResult.insertId,
       booking_id,
       created_by_name,
       created_by_role,
       message: "Booking created and room status updated",
     });
   } catch (err) {
-    console.error("Create booking error:", err.message);
+    console.error("Create booking error:", err);
     res.status(500).json({ error: "Create booking failed: " + err.message });
   }
 });
@@ -257,8 +203,6 @@ router.post("/:id/checkout", requireAuth, async (req, res) => {
   try {
     const bookingId = req.params.id;
     const checkoutService = require("../services/checkoutService");
-
-    console.log(`Processing checkout for booking ${bookingId}`);
 
     const result = await checkoutService.processCheckout(bookingId, req.body, req.user);
 
@@ -286,34 +230,38 @@ router.post("/:id/checkout", requireAuth, async (req, res) => {
 });
 
 // GET - BOOKING BY ID
-router.get("/:id", requireAuth, (req, res) => {
-  const query = `
-    SELECT
-      b.id,
-      b.booking_id,
-      b.check_in,
-      b.check_out,
-      b.status,
-      b.price,
-      b.advance_paid,
-      b.add_ons,
-      b.created_by_id,
-      b.created_by_name,
-      b.created_by_role,
-      c.name    AS customer_name,
-      c.contact AS customer_contact,
-      r.room_number,
-      r.category AS room_category
-    FROM bookings b
-    JOIN customers c ON b.customer_id = c.id
-    JOIN rooms r ON b.room_id = r.id
-    WHERE b.id = ?
-  `;
-  db.get(query, [req.params.id], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
+router.get("/:id", requireAuth, async (req, res) => {
+  try {
+    const query = `
+      SELECT
+        b.id,
+        b.booking_id,
+        b.check_in,
+        b.check_out,
+        b.status,
+        b.price,
+        b.advance_paid,
+        b.add_ons,
+        b.created_by_id,
+        b.created_by_name,
+        b.created_by_role,
+        c.name    AS customer_name,
+        c.contact AS customer_contact,
+        r.room_number,
+        r.category AS room_category
+      FROM bookings b
+      JOIN customers c ON b.customer_id = c.id
+      JOIN rooms r ON b.room_id = r.id
+      WHERE b.id = ?
+    `;
+    const [rows] = await db.query(query, [req.params.id]);
+    const row = rows[0];
     if (!row) return res.status(404).json({ error: "Booking not found" });
     res.json(row);
-  });
+  } catch (err) {
+    console.error("Get booking by ID error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PUT - UPDATE BOOKING STATUS
@@ -325,40 +273,46 @@ router.put("/:id", requireAuth, async (req, res) => {
     }
 
     const roomStatus =
-      status === "Checked-in"  ? "Occupied"  :
-      status === "Checked-out" ? "Available" :
-      status === "Confirmed"   ? "Booked"    : "Available";
+      status === "Checked-in"
+        ? "Occupied"
+        : status === "Checked-out"
+        ? "Available"
+        : status === "Confirmed"
+        ? "Booked"
+        : "Available";
 
-    await runQuery("UPDATE bookings SET status = ? WHERE id = ?", [
-      status,
-      req.params.id,
-    ]);
+    const [updateBookings] = await db.query("UPDATE bookings SET status = ? WHERE id = ?", [status, req.params.id]);
+    if (updateBookings.affectedRows === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
 
-    const row = await getQuery("SELECT room_id FROM bookings WHERE id = ?", [
-      req.params.id,
-    ]);
+    const [rowResult] = await db.query("SELECT room_id FROM bookings WHERE id = ?", [req.params.id]);
+    const row = rowResult[0];
     if (!row) {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    await runQuery("UPDATE rooms SET status = ? WHERE id = ?", [
-      roomStatus,
-      row.room_id,
-    ]);
+    await db.query("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, row.room_id]);
 
     res.json({ message: "Status updated successfully" });
   } catch (err) {
-    console.error("Update booking error:", err.message);
+    console.error("Update booking error:", err);
     res.status(500).json({ error: "Update failed" });
   }
 });
 
 // DELETE - BOOKING
-router.delete("/:id", requireAuth, (req, res) => {
-  db.run("DELETE FROM bookings WHERE id = ?", [req.params.id], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
+router.delete("/:id", requireAuth, async (req, res) => {
+  try {
+    const [result] = await db.query("DELETE FROM bookings WHERE id = ?", [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
     res.json({ message: "Booking deleted" });
-  });
+  } catch (err) {
+    console.error("Delete booking error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
