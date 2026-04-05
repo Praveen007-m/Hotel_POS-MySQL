@@ -40,18 +40,6 @@ class CheckoutService {
 
       const roomTotal = Number(booking.price || 0) * stayDays;
 
-      // ✅ Kitchen (FIXED)
-      const kitchenResult = await dbService.all(
-        `SELECT SUM(ko.quantity * mi.price) as total
-         FROM kitchen_orders ko
-         JOIN menu_items mi ON ko.item_id = mi.id
-         WHERE ko.booking_id = ?
-         AND ko.status = 'Served'`,
-        [booking.booking_id]
-      );
-
-      const kitchenTotal = Number(kitchenResult[0]?.total || 0);
-
       // ✅ Existing addons (FIXED)
       const dbAddons = await dbService.all(
         `SELECT price FROM booking_addons WHERE booking_id = ?`,
@@ -69,15 +57,13 @@ class CheckoutService {
         0
       );
 
-      const expectedTotal =
-        roomTotal + kitchenTotal + dbAddonTotal + newAddonTotal;
+      const expectedTotal = roomTotal + dbAddonTotal + newAddonTotal;
 
       const providedTotal = Number(checkoutData.total_amount || 0);
 
       console.log("🧾 Checkout Debug:", {
         stayDays,
         roomTotal,
-        kitchenTotal,
         dbAddonTotal,
         newAddonTotal,
         expectedTotal,
@@ -148,14 +134,6 @@ class CheckoutService {
           stayDays
         );
 
-        // ✅ Settle kitchen after line-item capture
-        await dbService.run(
-          `UPDATE kitchen_orders SET status = 'Settled'
-           WHERE booking_id = ?
-           AND status = 'Served'`,
-          [booking.booking_id]
-        );
-
         return billingResult.lastID;
       });
 
@@ -208,27 +186,6 @@ class CheckoutService {
         subtotal: Number(addon.price),
         gst_rate: DEFAULT_GST_RATES.addon,
         total: Number(addon.price),
-      });
-    }
-
-    // Kitchen (already correct)
-    const kitchenOrders = await dbService.getKitchenOrdersForBilling(
-      booking.booking_id
-    );
-
-    for (const order of kitchenOrders) {
-      const itemTotal =
-        Number(order.item_price || 0) * Number(order.quantity || 1);
-
-      lines.push({
-        billing_id: billingId,
-        type: "kitchen",
-        description: `${order.item_name} × ${order.quantity}`,
-        quantity: order.quantity,
-        unit_price: Number(order.item_price || 0),
-        subtotal: itemTotal,
-        gst_rate: DEFAULT_GST_RATES.kitchen,
-        total: itemTotal,
       });
     }
 

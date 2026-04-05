@@ -7,7 +7,7 @@ const { DEFAULT_GST_RATES } = require('../utils/billingUtils');
  */
 class BillingService {
   /**
-   * Get billing preview (NOT persisted) with full breakdown including kitchen
+   * Get billing preview (NOT persisted)
    * Used for checkout modal and bill preview before finalization
    */
   async getBillingPreview(bookingId) {
@@ -48,15 +48,8 @@ class BillingService {
       0
     );
 
-    // ========== KITCHEN ORDERS (only 'Served') ==========
-    const kitchenOrders = await dbService.getKitchenOrdersForBilling(booking.booking_id);
-    const kitchenTotal = kitchenOrders.reduce(
-      (sum, k) => sum + Number(k.total || 0),
-      0
-    );
-
     // ========== TOTALS ==========
-    const subtotal = roomTotal + addonsTotal + kitchenTotal;
+    const subtotal = roomTotal + addonsTotal;
     const gstRate = this._getGstRate('room', roomTotal);
     const gst = subtotal * gstRate;
     const total = subtotal + gst;
@@ -80,22 +73,12 @@ class BillingService {
       // ✅ BILLING BREAKDOWN
       room_charges: Number(roomTotal.toFixed(2)),
       add_ons_total: Number(addonsTotal.toFixed(2)),
-      kitchen_total: Number(kitchenTotal.toFixed(2)),
       
       // ✅ ADD-ONS DETAILS
       add_ons: addonsData.map(a => ({
         id: a.id,
         name: a.name,
         price: Number(a.price || 0)
-      })),
-
-      // ✅ KITCHEN DETAILS
-      kitchen_orders: kitchenOrders.map(k => ({
-        id: k.id,
-        item_name: k.item_name,
-        quantity: k.quantity,
-        unit_price: Number(k.item_price || 0),
-        total: Number(k.total || 0)
       })),
       
       // ✅ FINAL TOTALS
@@ -224,4 +207,3 @@ const total = await dbService.get(`
 }
 
 module.exports = new BillingService();
-

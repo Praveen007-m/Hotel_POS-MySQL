@@ -47,7 +47,6 @@ const BillingModal = ({
     backendAddOnsTotal,
     newAddOnsTotal,
     addOnsTotal,
-    kitchenTotal,
     discountedRoom,
     roomGstRate,
   } = useMemo(() => {
@@ -57,7 +56,6 @@ const BillingModal = ({
         backendAddOnsTotal: 0,
         newAddOnsTotal: 0,
         addOnsTotal: 0,
-        kitchenTotal: 0,
         discountedRoom: 0,
         roomGstRate: DEFAULT_GST_RATES.room.low,
       };
@@ -82,12 +80,6 @@ const BillingModal = ({
 
     const addOnsTotal = backendAddOnsTotal + newAddOnsTotal;
 
-    // FIX 3 — kitchen from backend lines
-    const kitchenTotal =
-      (selectedBill.lines?.kitchen ?? []).reduce(
-        (sum, item) => sum + Number(item?.total || 0), 0
-      );
-
     const discount = Number(safeForm.discount || 0);
 
     // FIX 4 — discount cap uses actual roomCharges, not form.room_price
@@ -100,7 +92,6 @@ const BillingModal = ({
       backendAddOnsTotal,
       newAddOnsTotal,
       addOnsTotal,
-      kitchenTotal,
       discountedRoom,
       roomGstRate,
     };
@@ -110,18 +101,15 @@ const BillingModal = ({
 
   const safeGst = {
     room:    roomGstRate,
-    kitchen: DEFAULT_GST_RATES.kitchen,
     addon:   DEFAULT_GST_RATES.addon,
   };
 
-  // FIX 5 — kitchenTotal included in subtotal
-  const subtotal = discountedRoom + addOnsTotal + kitchenTotal;
+  const subtotal = discountedRoom + addOnsTotal;
 
   const roomGst    = gstIncluded ? discountedRoom * safeGst.room    : 0;
   const addOnsGst  = gstIncluded ? addOnsTotal    * safeGst.addon   : 0;
-  const kitchenGst = gstIncluded ? kitchenTotal   * safeGst.kitchen : 0;
 
-  const totalGst        = roomGst + addOnsGst + kitchenGst;
+  const totalGst        = roomGst + addOnsGst;
   const subtotalWithGst = subtotal + totalGst;
   const totalAmount     = subtotalWithGst - guestDiscount;
 
@@ -130,7 +118,6 @@ const BillingModal = ({
 
   const roomGstPercent    = Number((safeGst.room    * 100).toFixed(2));
   const addonGstPercent   = Number((safeGst.addon   * 100).toFixed(2));
-  const kitchenGstPercent = Number((safeGst.kitchen * 100).toFixed(2));
 
   /* ─── HELPERS ─────────────────────────────────────────────────── */
   const handleFormChange = (field, value, index, type) => {
@@ -138,7 +125,7 @@ const BillingModal = ({
       setForm({ ...form, [field]: value });
       return;
     }
-    const key = type === "add_on" ? "add_ons" : "kitchen_orders";
+    const key = "add_ons";
     const updated = [...form[key]];
     updated[index] = { ...updated[index], [field]: value };
     setForm({ ...form, [key]: updated });
@@ -368,28 +355,12 @@ const BillingModal = ({
               </>
             )}
 
-            {kitchenTotal > 0 && (
-              <>
-                <p><b>Kitchen Orders:</b> ₹{kitchenTotal.toFixed(2)}</p>
-                <ul className="list-disc ml-5">
-                  {(selectedBill.lines?.kitchen ?? []).map((k, i) => (
-                    <li key={i}>
-                      {k.description || `${k.item_name || "Item"} × ${k.quantity || 1}`} — ₹{Number(k.total || k.subtotal || 0).toFixed(2)}
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-
             <p><b>Subtotal:</b> ₹{subtotal.toFixed(2)}</p>
 
             {gstIncluded && (
               <>
                 <p><b>Room GST ({roomGstPercent}%):</b> ₹{roomGst.toFixed(2)}</p>
                 <p><b>Add-ons GST ({addonGstPercent}%):</b> ₹{addOnsGst.toFixed(2)}</p>
-                {kitchenTotal > 0 && (
-                  <p><b>Kitchen GST ({kitchenGstPercent}%):</b> ₹{kitchenGst.toFixed(2)}</p>
-                )}
               </>
             )}
 
@@ -431,12 +402,10 @@ const BillingModal = ({
                   guestDiscount,
                   gstRates: {
                     room:    safeGst.room,
-                    kitchen: safeGst.kitchen,
                     addon:   safeGst.addon,
                   },
                   gstAmounts: {
                     room:    roomGst,
-                    kitchen: kitchenGst,
                     addon:   addOnsGst,
                   },
                   subtotal,

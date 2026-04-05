@@ -13,7 +13,6 @@ export default function BookingList({
 }) {
   const [checkoutBooking, setCheckoutBooking] = useState(null);
   const [checkoutData, setCheckoutData] = useState({});
-  const [kitchenOrders, setKitchenOrders] = useState([]);
   const [availableAddons, setAvailableAddons] = useState([]);
   const [statusUpdatingId, setStatusUpdatingId] = useState(null);
   const [selectedAddonId, setSelectedAddonId] = useState("");
@@ -54,10 +53,10 @@ export default function BookingList({
 
   /* ─── FIX: canonical total recalculator ───────────────────────
    * Mirrors exactly what the backend checkoutService computes:
-   *   expectedTotal = roomTotal + kitchenTotal + newAddonTotal
+   *   expectedTotal = roomTotal + newAddonTotal
    * No GST, no discounts — those are applied later in BillingModal.
    * ──────────────────────────────────────────────────────────── */
-  const recomputeTotals = (price, stayDays, addons, kitchen) => {
+  const recomputeTotals = (price, stayDays, addons) => {
     const roomTotal = Number(price || 0) * Number(stayDays || 1);
 
     const addOnsTotal = Object.values(addons || {}).reduce(
@@ -65,13 +64,8 @@ export default function BookingList({
       0
     );
 
-    const kitchenTotal = (kitchen || []).reduce(
-      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1),
-      0
-    );
-
-    const totalAmount = roomTotal + addOnsTotal + kitchenTotal;
-    return { addOnsTotal, kitchenTotal, totalAmount };
+    const totalAmount = roomTotal + addOnsTotal;
+    return { addOnsTotal, totalAmount };
   };
 
   /* ─── FETCH ADD-ONS ───────────────────────────────────────────── */
@@ -117,16 +111,6 @@ export default function BookingList({
       };
     });
 
-    // Fetch kitchen orders
-    let kitchenData = [];
-    try {
-      const res = await auth.get(`/kitchen/orders?booking_id=${booking.booking_id}`);
-      kitchenData = res.data;
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to fetch kitchen orders");
-    }
-
     // Stay duration — use check_in/check_out dates only (no time component)
     const checkInDate = new Date(booking.check_in);
     const checkOutDate = new Date(booking.check_out);
@@ -139,16 +123,13 @@ export default function BookingList({
 
     // FIX: use recomputeTotals so displayed total matches what backend expects
     const roomPrice = Number(booking.price || 0);
-    const { addOnsTotal, kitchenTotal, totalAmount } = recomputeTotals(
+    const { addOnsTotal, totalAmount } = recomputeTotals(
       roomPrice,
       stayDays,
-      addons,
-      kitchenData
+      addons
     );
 
     const advancePaid = Number(booking.advance_paid || 0);
-
-    setKitchenOrders(kitchenData);
     setCheckoutBooking(booking);
     setCheckoutData({
       check_out: new Date().toISOString().slice(0, 16),
@@ -158,7 +139,6 @@ export default function BookingList({
       stayDays,
       add_ons: addons,
       addOnsTotal,
-      kitchenTotal,
       totalAmount,
       advancePaid,
       balanceAmount: totalAmount - advancePaid,
@@ -188,18 +168,16 @@ export default function BookingList({
     };
 
     // FIX: recompute total the same way backend does
-    const { addOnsTotal, kitchenTotal, totalAmount } = recomputeTotals(
+    const { addOnsTotal, totalAmount } = recomputeTotals(
       checkoutData.roomPrice,
       checkoutData.stayDays,
-      updatedAddons,
-      kitchenOrders
+      updatedAddons
     );
 
     setCheckoutData((prev) => ({
       ...prev,
       add_ons: updatedAddons,
       addOnsTotal,
-      kitchenTotal,
       totalAmount,
       balanceAmount: totalAmount - (prev.advancePaid || 0),
     }));
@@ -218,18 +196,16 @@ export default function BookingList({
     };
 
     // FIX: recompute total consistently
-    const { addOnsTotal, kitchenTotal, totalAmount } = recomputeTotals(
+    const { addOnsTotal, totalAmount } = recomputeTotals(
       checkoutData.roomPrice,
       checkoutData.stayDays,
-      updated,
-      kitchenOrders
+      updated
     );
 
     setCheckoutData((prev) => ({
       ...prev,
       add_ons: updated,
       addOnsTotal,
-      kitchenTotal,
       totalAmount,
       balanceAmount: totalAmount - (prev.advancePaid || 0),
     }));
@@ -247,9 +223,8 @@ export default function BookingList({
       const { totalAmount } = recomputeTotals(
         checkoutData.roomPrice,
         checkoutData.stayDays,
-        checkoutData.add_ons,
-        kitchenOrders
-      );
+        checkoutData.add_ons
+    );
 
       console.log("Sending to checkout:", {
         add_ons: finalAddOns,
@@ -259,7 +234,6 @@ export default function BookingList({
       await auth.post(`/bookings/${checkoutBooking.id}/checkout`, {
         check_out: checkoutData.check_out,
         add_ons: finalAddOns,
-        kitchen_orders: kitchenOrders,
         total_amount: totalAmount,          // ← always in sync with backend formula
         gst_number: checkoutData.gstNumber || undefined,
       });
@@ -268,7 +242,6 @@ export default function BookingList({
       onDelete(checkoutBooking.id);
       setCheckoutBooking(null);
       setCheckoutData({});
-      setKitchenOrders([]);
       navigate("/billing");
     } catch (err) {
       console.error(err);
@@ -335,8 +308,7 @@ export default function BookingList({
             </h3>
 
             <p className="text-sm text-gray-600 mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
-              This will generate final bill (room + kitchen + GST), mark all
-              kitchen orders as "Settled", and complete checkout.
+              This will generate final bill (room + GST), complete checkout.
             </p>
 
             <p className="mb-2">
@@ -412,27 +384,6 @@ export default function BookingList({
               </select>
             </div>
 
-            {/* Kitchen orders */}
-            {kitchenOrders.length > 0 && (
-              <>
-                <p className="font-medium mb-2 mt-4">Kitchen Orders:</p>
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-3 mb-3 space-y-2">
-                  {kitchenOrders.map((item, index) => (
-                    <div key={index} className="flex justify-between text-sm text-gray-700">
-                      <span>{item.item_name} × {item.quantity}</span>
-                      <span className="font-semibold text-green-700">
-                        ₹{(item.price * item.quantity).toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="border-t border-green-200 pt-2 flex justify-between font-semibold text-green-800">
-                    <span>Kitchen Total:</span>
-                    <span>₹{checkoutData.kitchenTotal.toFixed(2)}</span>
-                  </div>
-                </div>
-              </>
-            )}
-
             {/* Bill Summary */}
             <div className="mt-4 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-4 space-y-2">
               <h3 className="font-semibold text-gray-800 mb-3">Bill Summary</h3>
@@ -444,12 +395,6 @@ export default function BookingList({
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-700">Add-ons Total:</span>
                   <span className="font-medium">₹{checkoutData.addOnsTotal.toFixed(2)}</span>
-                </div>
-              )}
-              {checkoutData.kitchenTotal > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-700">Kitchen Total:</span>
-                  <span className="font-medium text-green-700">₹{checkoutData.kitchenTotal.toFixed(2)}</span>
                 </div>
               )}
               <div className="border-t border-blue-200 pt-2 flex justify-between">
@@ -503,3 +448,4 @@ export default function BookingList({
     </>
   );
 }
+
