@@ -38,23 +38,25 @@ class BillingService {
     // ========== ROOM CHARGES ==========
     const roomTotal = Number(booking.price_per_night || 0) * stayDays;
 
+    // ========== KITCHEN CHARGES ==========
+    const kitchenSummary = await dbService.getKitchenBillingSummary(booking.booking_id);
+    const kitchenTotal = Number(kitchenSummary.kitchenTotal || 0);
+
     // ========== ADD-ONS ==========
-    const addonsData = await dbService.all(
-      `SELECT id, name, price FROM booking_addons WHERE booking_id = ?`,
-      [booking.booking_id]
-    );
+    const addonsData = await dbService.getBookingAddons(booking.booking_id);
     const addonsTotal = addonsData.reduce(
       (sum, a) => sum + Number(a.price || 0),
       0
     );
 
     // ========== TOTALS ==========
-    const subtotal = roomTotal + addonsTotal;
+    const subtotal = roomTotal + kitchenTotal + addonsTotal;
     const gstRate = this._getGstRate('room', roomTotal);
     const gst = subtotal * gstRate;
     const total = subtotal + gst;
     const advancePaid = Number(booking.advance_paid || 0);
     const balance = total - advancePaid;
+    const balanceAmount = subtotal - advancePaid;
 
     return {
       booking_id: booking.booking_id,
@@ -72,7 +74,11 @@ class BillingService {
       
       // ✅ BILLING BREAKDOWN
       room_charges: Number(roomTotal.toFixed(2)),
+      kitchen_total: Number(kitchenTotal.toFixed(2)),
       add_ons_total: Number(addonsTotal.toFixed(2)),
+      roomTotal: Number(roomTotal.toFixed(2)),
+      kitchenTotal: Number(kitchenTotal.toFixed(2)),
+      addonTotal: Number(addonsTotal.toFixed(2)),
       
       // ✅ ADD-ONS DETAILS
       add_ons: addonsData.map(a => ({
@@ -86,8 +92,11 @@ class BillingService {
       gst_rate: gstRate,
       gst: Number(gst.toFixed(2)),
       total: Number(total.toFixed(2)),
+      totalAmount: Number(subtotal.toFixed(2)),
       advance_paid: Number(advancePaid.toFixed(2)),
-      balance: Number(balance.toFixed(2))
+      advancePaid: Number(advancePaid.toFixed(2)),
+      balance: Number(balance.toFixed(2)),
+      balanceAmount: Number(balanceAmount.toFixed(2))
     };
   }
 

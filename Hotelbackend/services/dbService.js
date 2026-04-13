@@ -100,28 +100,11 @@ class DbService {
 
     if (!booking) return null;
 
-    // Add-ons
-    const addons = await this.all(
-      "SELECT name, price FROM booking_addons WHERE booking_id = ?",
-      [booking.booking_id]
-    );
+    const addons = await this.getBookingAddons(booking.booking_id);
+    const addonsTotal = addons.reduce((sum, a) => sum + Number(a.price || 0), 0);
 
-    const addonsTotal = addons.reduce(
-      (sum, a) => sum + Number(a.price || 0),
-      0
-    );
-
-    // Kitchen total - ONLY 'served' status (already settled/finalized)
-    const kitchenRows = await this.all(
-      `SELECT SUM(mi.price * ko.quantity) AS kitchen_total
-       FROM kitchen_orders ko
-       JOIN menu_items mi ON ko.item_id = mi.id
-       WHERE ko.booking_id = ?
-       AND ko.status = 'Served'`,
-      [booking.booking_id]
-    );
-
-    const kitchenTotal = Number(kitchenRows[0]?.kitchen_total || 0);
+    const kitchenSummary = await this.getKitchenBillingSummary(booking.booking_id);
+    const kitchenTotal = Number(kitchenSummary.kitchenTotal || 0);
 
     return {
       ...booking,
@@ -149,6 +132,47 @@ class DbService {
        WHERE ko.booking_id = ?
        AND ko.status = 'Served'
        ORDER BY ko.created_at ASC`,
+      [bookingId]
+    );
+  }
+
+  async getBookingAddons(bookingId) {
+    return await this.all(
+      `SELECT id, name, price FROM booking_addons WHERE booking_id = ?`,
+      [bookingId]
+    );
+  }
+
+  async getKitchenBillingSummary(bookingId) {
+    const row = await this.get(
+      `SELECT
+         COALESCE(SUM(mi.price * ko.quantity), 0) AS kitchenTotal
+       FROM kitchen_orders ko
+       LEFT JOIN menu_items mi ON ko.item_id = mi.id
+       WHERE ko.booking_id = ?
+         AND UPPER(COALESCE(ko.status, '')) IN ('SERVED', 'READY', 'READY FOR BILLING')`,
+      [bookingId]
+    );
+
+    return {
+      kitchenTotal: Number(row?.kitchenTotal || 0),
+    };
+  }
+
+  async getKitchenOrdersForInvoice(bookingId) {
+    return await this.all(
+      `SELECT
+         ko.id,
+         ko.quantity,
+         COALESCE(mi.name, CONCAT('Kitchen Item #', ko.item_id)) AS item_name,
+         COALESCE(mi.price * ko.quantity, 0) AS total,
+         COALESCE(mi.price, 0) AS item_price,
+         ko.status
+       FROM kitchen_orders ko
+       LEFT JOIN menu_items mi ON ko.item_id = mi.id
+       WHERE ko.booking_id = ?
+         AND UPPER(COALESCE(ko.status, '')) IN ('SERVED', 'READY', 'READY FOR BILLING')
+       ORDER BY ko.created_at ASC, ko.id ASC`,
       [bookingId]
     );
   }
