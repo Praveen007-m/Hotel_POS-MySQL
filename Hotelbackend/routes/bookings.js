@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/database");
 const { requireAuth } = require("../middleware/auth");
+const moment = require("moment-timezone");
 
 // DEBUG - CHECK ROOM BY ID
 router.get("/debug/room/:roomId", requireAuth, async (req, res) => {
@@ -112,7 +113,10 @@ router.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    if (check_out && new Date(check_out) <= new Date(check_in)) {
+    if (
+      check_out &&
+      moment(check_out).isSameOrBefore(moment(check_in))
+    ) {
       return res.status(400).json({ error: "Check-out must be after check-in" });
     }
 
@@ -133,8 +137,13 @@ router.post("/", requireAuth, async (req, res) => {
       created_by_name = staffRows[0]?.name || "Staff";
     }
 
-    const checkInStr = check_in || new Date().toISOString().slice(0, 19);
-    const checkOutStr = check_out || null;
+    const checkInStr = check_in
+      ? moment.tz(check_in, "Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss")
+      : moment.tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+
+    const checkOutStr = check_out
+      ? moment.tz(check_out, "Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss")
+      : null;
 
     const [roomRows] = await db.query("SELECT id, capacity FROM rooms WHERE id = ?", [room_id]);
     const room = roomRows[0];
