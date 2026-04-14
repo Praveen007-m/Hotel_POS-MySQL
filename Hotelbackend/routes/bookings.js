@@ -2,7 +2,45 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/database");
 const { requireAuth } = require("../middleware/auth");
-const moment = require("moment-timezone");
+
+// ─────────────────────────────────────────────────────────────
+// DATETIME HELPERS  (pure string — zero Date() construction)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Safely convert any incoming datetime string to MySQL DATETIME format.
+ *
+ * Accepts:
+ *   "YYYY-MM-DDThh:mm"        → "YYYY-MM-DD hh:mm:00"   (from datetime-local input)
+ *   "YYYY-MM-DD HH:mm:ss"     → unchanged                (already DB format)
+ *   "YYYY-MM-DD HH:mm"        → "YYYY-MM-DD HH:mm:00"   (DB format, no seconds)
+ *
+ * Returns null for falsy input.
+ * Pure string manipulation — no new Date(), no timezone interpretation.
+ */
+const toMySQLDateTime = (value) => {
+  if (!value) return null;
+  // Normalise the T separator → space
+  const normalised = value.replace("T", " ").trim();
+  // Ensure seconds are present ("HH:mm" → "HH:mm:00")
+  // A full datetime is at least 16 chars: "YYYY-MM-DD HH:mm"
+  if (normalised.length === 16) return normalised + ":00";
+  return normalised; // already has seconds
+};
+
+/**
+ * Compare two MySQL DATETIME strings as strings.
+ * Safe because the format "YYYY-MM-DD HH:mm:ss" is lexicographically sortable.
+ * Returns true when a < b.
+ */
+const dtLessThan = (a, b) => {
+  if (!a || !b) return false;
+  return a < b;
+};
+
+// ─────────────────────────────────────────────────────────────
+// ROUTES
+// ─────────────────────────────────────────────────────────────
 
 // DEBUG - CHECK ROOM BY ID
 router.get("/debug/room/:roomId", requireAuth, async (req, res) => {
@@ -12,7 +50,6 @@ router.get("/debug/room/:roomId", requireAuth, async (req, res) => {
       [req.params.roomId]
     );
     const room = rows[0];
-
     res.json({
       requested_room_id: req.params.roomId,
       found: Boolean(room),
@@ -32,8 +69,8 @@ router.get("/calendar", requireAuth, async (req, res) => {
         b.id,
         b.booking_id,
         b.room_id,
-        b.check_in AS check_in,
-        b.check_out AS check_out,
+        b.check_in,
+        b.check_out,
         b.status,
         r.room_number
       FROM bookings b
@@ -42,6 +79,7 @@ router.get("/calendar", requireAuth, async (req, res) => {
       ORDER BY b.check_in ASC
     `;
     const [rows] = await db.query(query);
+    // Return raw DB strings — no Date() construction, no serialisation shift
     res.json(rows);
   } catch (err) {
     console.error("Calendar fetch error:", err);
@@ -96,15 +134,16 @@ router.post("/", requireAuth, async (req, res) => {
       add_ons,
     } = req.body;
 
-    const price = Number(req.body.price) || 0;
+    const price        = Number(req.body.price)        || 0;
     const advance_paid = Number(req.body.advance_paid) || 0;
     const people_count = Number(req.body.people_count) || 1;
 
+    // ── Validation ──────────────────────────────────────────
     const missing = [];
-    if (!booking_id) missing.push("booking_id");
+    if (!booking_id)  missing.push("booking_id");
     if (!customer_id) missing.push("customer_id");
-    if (!room_id) missing.push("room_id");
-    if (!price) missing.push("price");
+    if (!room_id)     missing.push("room_id");
+    if (!price)       missing.push("price");
 
     if (missing.length > 0) {
       return res.status(400).json({
@@ -113,16 +152,21 @@ router.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    if (
-      check_out &&
-      moment(check_out).isSameOrBefore(moment(check_in))
-    ) {
+    // ── Convert incoming datetime strings safely ─────────────
+    // toMySQLDateTime handles "YYYY-MM-DDThh:mm" and already-correct formats.
+    // It NEVER constructs a Date object, so no timezone shift can occur.
+    const checkInStr  = toMySQLDateTime(check_in);
+    const checkOutStr = toMySQLDateTime(check_out);
+
+    // ── check_out must be after check_in (string compare is safe here) ──
+    if (checkInStr && checkOutStr && !dtLessThan(checkInStr, checkOutStr)) {
       return res.status(400).json({ error: "Check-out must be after check-in" });
     }
 
-    const created_by_id = req.user.id;
+    // ── Resolve creator name ─────────────────────────────────
+    const created_by_id   = req.user.id;
     const created_by_role = req.user.role;
-    let created_by_name = null;
+    let   created_by_name = null;
 
     if (created_by_role === "admin") {
       const [adminRows] = await db.query("SELECT name FROM users WHERE id = ?", [created_by_id]);
@@ -137,37 +181,38 @@ router.post("/", requireAuth, async (req, res) => {
       created_by_name = staffRows[0]?.name || "Staff";
     }
 
-    const checkInStr = check_in
-      ? moment.tz(check_in, "Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss")
-      : moment.tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
-
-    const checkOutStr = check_out
-      ? moment.tz(check_out, "Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss")
-      : null;
-
-    const [roomRows] = await db.query("SELECT id, capacity FROM rooms WHERE id = ?", [room_id]);
-    const room = roomRows[0];
-    if (!room) {
+    // ── Validate room exists ─────────────────────────────────
+    const [roomRows] = await db.query(
+      "SELECT id, capacity FROM rooms WHERE id = ?",
+      [room_id]
+    );
+    if (!roomRows[0]) {
       return res.status(400).json({ error: "Invalid room selected" });
     }
 
+    // ── Availability check ───────────────────────────────────
+    // All comparisons done inside MySQL against raw DATETIME columns —
+    // no JavaScript Date() objects involved.
     const [availabilityRows] = await db.query(
-      `SELECT COUNT(*) as conflictCount
+      `SELECT COUNT(*) AS conflictCount
        FROM bookings
        WHERE room_id = ?
          AND status IN ('Confirmed', 'Checked-in')
-         AND check_in < ?
+         AND check_in  < ?
          AND (check_out IS NULL OR check_out > ?)`,
       [room_id, checkOutStr || checkInStr, checkInStr]
     );
 
     const conflictCount = availabilityRows[0]?.conflictCount || 0;
     if (conflictCount > 0) {
-      return res.status(409).json({ error: `Room is not available between ${checkInStr} and ${checkOutStr}` });
+      return res.status(409).json({
+        error: `Room is not available between ${checkInStr} and ${checkOutStr}`,
+      });
     }
 
     const bookingStatus = status || "Confirmed";
 
+    // ── Insert ───────────────────────────────────────────────
     const [insertResult] = await db.query(
       `INSERT INTO bookings
          (booking_id, customer_id, room_id, check_in, check_out, status,
@@ -178,8 +223,8 @@ router.post("/", requireAuth, async (req, res) => {
         booking_id,
         Number(customer_id),
         Number(room_id),
-        checkInStr,
-        checkOutStr,
+        checkInStr,          // ✅ plain string, no timezone shift
+        checkOutStr,         // ✅ plain string, no timezone shift
         bookingStatus,
         price,
         JSON.stringify(add_ons || []),
@@ -282,24 +327,25 @@ router.put("/:id", requireAuth, async (req, res) => {
     }
 
     const roomStatus =
-      status === "Checked-in"
-        ? "Occupied"
-        : status === "Checked-out"
-        ? "Available"
-        : status === "Confirmed"
-        ? "Booked"
-        : "Available";
+      status === "Checked-in"  ? "Occupied"  :
+      status === "Checked-out" ? "Available" :
+      status === "Confirmed"   ? "Booked"    :
+                                 "Available";
 
-    const [updateBookings] = await db.query("UPDATE bookings SET status = ? WHERE id = ?", [status, req.params.id]);
+    const [updateBookings] = await db.query(
+      "UPDATE bookings SET status = ? WHERE id = ?",
+      [status, req.params.id]
+    );
     if (updateBookings.affectedRows === 0) {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    const [rowResult] = await db.query("SELECT room_id FROM bookings WHERE id = ?", [req.params.id]);
+    const [rowResult] = await db.query(
+      "SELECT room_id FROM bookings WHERE id = ?",
+      [req.params.id]
+    );
     const row = rowResult[0];
-    if (!row) {
-      return res.status(404).json({ error: "Booking not found" });
-    }
+    if (!row) return res.status(404).json({ error: "Booking not found" });
 
     await db.query("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, row.room_id]);
 

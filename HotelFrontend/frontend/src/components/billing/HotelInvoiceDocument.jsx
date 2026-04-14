@@ -11,8 +11,6 @@ import {
 
 const BORDER_COLOR = "#000000";
 
-// ===== QR CODE IMAGE PATHS =====
-// These should point to your public folder or CDN
 const INSTAGRAM_QR_PATH = "/insta_qr.jpeg";
 const WEBSITE_QR_PATH = "/hotel_qr.jpeg";
 
@@ -49,7 +47,6 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins",
     fontSize: 9,
   },
-  // --- Header ---
   headerContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -117,7 +114,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     alignSelf: "flex-start",
   },
-  // --- Guest & Stay Details ---
   detailsContainer: {
     flexDirection: "row",
     borderWidth: 1,
@@ -170,8 +166,6 @@ const styles = StyleSheet.create({
     width: "75%",
     padding: 4,
   },
-
-  // --- Billing Particulars Table ---
   table: {
     width: "100%",
     borderWidth: 1,
@@ -228,8 +222,6 @@ const styles = StyleSheet.create({
   colHeader: {
     fontWeight: 600,
   },
-
-  // --- Footer Section ---
   footer: {
     marginTop: "auto",
   },
@@ -262,8 +254,6 @@ const styles = StyleSheet.create({
   boldText: {
     fontWeight: 600,
   },
-  
-  // --- QR Codes Section ---
   qrSection: {
     marginTop: 12,
     paddingTop: 8,
@@ -353,7 +343,6 @@ export const HotelInvoiceDocument = ({
     return `${parts.day} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute} ${parts.dayPeriod}`;
   };
 
-  // Safe defaults
   const billNo = selectedBill?.bill_id || selectedBill?.id || "N/A";
   const dateStr = formatDateTime(new Date());
   const roomCat = selectedBill?.room_category || "Standard Room";
@@ -377,24 +366,26 @@ export const HotelInvoiceDocument = ({
     selectedBill?.check_out || selectedBill?.check_in || new Date(),
   );
 
-  // GST logic
   const roomPrice = Number(form?.room_price || 0);
   const addOns = Array.isArray(form?.add_ons) ? form.add_ons : [];
-  
-  // ✅ GET KITCHEN ITEMS FROM SELECTED BILL LINES
+
   let kitchenItems = [];
   if (selectedBill?.lines?.kitchen && Array.isArray(selectedBill.lines.kitchen)) {
     kitchenItems = selectedBill.lines.kitchen;
   }
 
-  const roomGstAmount = Number(gstAmounts?.room || 0);
-  const addonGstAmount = Number(gstAmounts?.addon || 0);
+  // ── GST amounts (each kept separate) ──────────────────────────
+  const roomGstAmount    = Number(gstAmounts?.room    || 0);
+  const addonGstAmount   = Number(gstAmounts?.addon   || 0);
   const kitchenGstAmount = Number(gstAmounts?.kitchen || 0);
+  const totalGstAmount   = roomGstAmount + addonGstAmount + kitchenGstAmount;
 
-  // ✅ INCLUDE KITCHEN GST IN TOTAL
-  const totalGstAmount = roomGstAmount + addonGstAmount + kitchenGstAmount;
+  // ── GST rate labels ────────────────────────────────────────────
+  const roomGstPct    = ((gstRates?.room    || 0) * 100).toFixed(1);
+  const addonGstPct   = ((gstRates?.addon   || gstRates?.room || 0) * 100).toFixed(1);
+  const kitchenGstPct = ((gstRates?.kitchen || gstRates?.room || 0) * 100).toFixed(1);
 
-  const roomDiscountVal = Number(form?.discount || 0);
+  const roomDiscountVal      = Number(form?.discount || 0);
   const discountedRoomTariff = Math.max(0, roomPrice - roomDiscountVal);
 
   const totalGrossValue = subtotal;
@@ -415,7 +406,7 @@ export const HotelInvoiceDocument = ({
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* 1. Header Section */}
+        {/* 1. Header */}
         <View style={styles.headerContainer}>
           <View style={styles.headerLeft}>
             <Image style={styles.logo} src="/FridayInnLogo.png" />
@@ -435,13 +426,8 @@ export const HotelInvoiceDocument = ({
               <Text style={styles.gstBanner}>GST NO: 33AMQPK7880E1ZP</Text>
             </View>
           </View>
-
-          {/* Instagram QR in Header */}
           <View style={styles.headerRight}>
-            <Image 
-              style={styles.headerQR} 
-              src={INSTAGRAM_QR_PATH}
-            />
+            <Image style={styles.headerQR} src={INSTAGRAM_QR_PATH} />
             <Text style={styles.headerQRLabel}>Follow us on</Text>
             <Text style={styles.headerQRLabel}>Instagram</Text>
           </View>
@@ -449,7 +435,6 @@ export const HotelInvoiceDocument = ({
 
         {/* 2. Guest & Stay Details */}
         <View style={styles.detailsContainer}>
-          {/* Left Side */}
           <View style={styles.guestLeftBox}>
             <Text>
               <Text style={styles.boldText}>Name:</Text>{" "}
@@ -467,8 +452,6 @@ export const HotelInvoiceDocument = ({
               </Text>
             )}
           </View>
-
-          {/* Right Side */}
           <View style={styles.guestRightBox}>
             <View style={styles.rightTableRow}>
               <Text style={styles.detailLabelSingle}>Date</Text>
@@ -515,7 +498,7 @@ export const HotelInvoiceDocument = ({
             <Text style={[styles.col5, styles.colHeader]}>AMOUNT</Text>
           </View>
 
-          {/* Room Tariff Row */}
+          {/* Room Tariff */}
           <View style={styles.tableRow}>
             <Text style={styles.col1}>{lineItemDateOnly}</Text>
             <Text style={styles.col2}>
@@ -529,7 +512,7 @@ export const HotelInvoiceDocument = ({
             <Text style={styles.col5}>{discountedRoomTariff.toFixed(2)}</Text>
           </View>
 
-          {/* Add-ons Rows */}
+          {/* Add-ons */}
           {addOns.map((addon, i) => {
             const addonTotal = Number(addon.price) * Number(addon.qty);
             return (
@@ -545,7 +528,7 @@ export const HotelInvoiceDocument = ({
             );
           })}
 
-          {/* ✅ KITCHEN ITEMS ROWS */}
+          {/* Kitchen Items */}
           {kitchenItems.map((item, i) => {
             const itemTotal = Number(item.subtotal || 0);
             return (
@@ -561,25 +544,56 @@ export const HotelInvoiceDocument = ({
             );
           })}
 
-          {/* GST Row */}
-          {gstIncluded && totalGstAmount > 0 && (
+          {/* ── SEPARATE GST ROWS ─────────────────────────────────────────
+              Instead of one combined "GST (5%)" row, we now show:
+                • Room Tariff GST   — always shown when gstIncluded & amount > 0
+                • Add-ons GST       — only when there are add-ons with GST
+                • Kitchen Orders GST — only when there are kitchen items with GST
+          ──────────────────────────────────────────────────────────────── */}
+
+          {/* Row 1: Room Tariff GST */}
+          {gstIncluded && roomGstAmount > 0 && (
             <View style={styles.tableRow}>
               <Text style={styles.col1}>{lineItemDateOnly}</Text>
               <Text style={styles.col2}>
-                GST ({(gstRates.room * 100).toFixed(1)}%)
+                Room Tariff GST ({roomGstPct}%)
               </Text>
-              <Text style={styles.col3}>{totalGstAmount.toFixed(2)}</Text>
+              <Text style={styles.col3}>{roomGstAmount.toFixed(2)}</Text>
               <Text style={styles.col4}>0.00</Text>
-              <Text style={styles.col5}>{totalGstAmount.toFixed(2)}</Text>
+              <Text style={styles.col5}>{roomGstAmount.toFixed(2)}</Text>
             </View>
           )}
 
-          {/* Subtotal Footer */}
+          {/* Row 2: Add-ons GST */}
+          {gstIncluded && addonGstAmount > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.col1}>{lineItemDateOnly}</Text>
+              <Text style={styles.col2}>
+                Add-ons GST ({addonGstPct}%)
+              </Text>
+              <Text style={styles.col3}>{addonGstAmount.toFixed(2)}</Text>
+              <Text style={styles.col4}>0.00</Text>
+              <Text style={styles.col5}>{addonGstAmount.toFixed(2)}</Text>
+            </View>
+          )}
+
+          {/* Row 3: Kitchen Orders GST */}
+          {gstIncluded && kitchenGstAmount > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.col1}>{lineItemDateOnly}</Text>
+              <Text style={styles.col2}>
+                Kitchen Orders GST ({kitchenGstPct}%)
+              </Text>
+              <Text style={styles.col3}>{kitchenGstAmount.toFixed(2)}</Text>
+              <Text style={styles.col4}>0.00</Text>
+              <Text style={styles.col5}>{kitchenGstAmount.toFixed(2)}</Text>
+            </View>
+          )}
+
+          {/* Summary rows — totalGstAmount already covers all three */}
           <View style={styles.tableRow}>
             <Text style={styles.col1}></Text>
-            <Text
-              style={[styles.col2, styles.boldText, { textAlign: "right" }]}
-            >
+            <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
               Total INR
             </Text>
             <Text style={styles.col3}></Text>
@@ -589,35 +603,30 @@ export const HotelInvoiceDocument = ({
             </Text>
           </View>
 
-          {/* Financial Summary Items appended to Table */}
           <View style={styles.tableRow}>
             <Text style={styles.col1}></Text>
-            <Text
-              style={[styles.col2, styles.boldText, { textAlign: "right" }]}
-            >
+            <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
               Gross Value
             </Text>
             <Text style={styles.col3}></Text>
             <Text style={styles.col4}></Text>
             <Text style={styles.col5}>{totalGrossValue.toFixed(2)}</Text>
           </View>
+
           <View style={styles.tableRow}>
             <Text style={styles.col1}></Text>
-            <Text
-              style={[styles.col2, styles.boldText, { textAlign: "right" }]}
-            >
+            <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
               Tax Amount
             </Text>
             <Text style={styles.col3}></Text>
             <Text style={styles.col4}></Text>
             <Text style={styles.col5}>{totalGstAmount.toFixed(2)}</Text>
           </View>
+
           {guestDiscount > 0 && (
             <View style={styles.tableRow}>
               <Text style={styles.col1}></Text>
-              <Text
-                style={[styles.col2, styles.boldText, { textAlign: "right" }]}
-              >
+              <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
                 Guest Discount
               </Text>
               <Text style={styles.col3}></Text>
@@ -627,22 +636,20 @@ export const HotelInvoiceDocument = ({
               </Text>
             </View>
           )}
+
           <View style={styles.tableRow}>
             <Text style={styles.col1}></Text>
-            <Text
-              style={[styles.col2, styles.boldText, { textAlign: "right" }]}
-            >
+            <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
               Advance Paid
             </Text>
             <Text style={styles.col3}></Text>
             <Text style={styles.col4}></Text>
             <Text style={styles.col5}>{Number(advancePaid).toFixed(2)}</Text>
           </View>
+
           <View style={styles.tableRowLast}>
             <Text style={styles.col1}></Text>
-            <Text
-              style={[styles.col2, styles.boldText, { textAlign: "right" }]}
-            >
+            <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
               BILL TOTAL
             </Text>
             <Text style={styles.col3}></Text>
@@ -653,7 +660,7 @@ export const HotelInvoiceDocument = ({
           </View>
         </View>
 
-        {/* 5. Footer Section */}
+        {/* 4. Footer */}
         <View style={styles.footer}>
           <View style={styles.usersRow}>
             <Text>
@@ -676,14 +683,10 @@ export const HotelInvoiceDocument = ({
             <Text style={styles.signatureBox}>Guest Signature</Text>
           </View>
 
-          {/* Website QR CODE IN FOOTER */}
           <View style={styles.qrSection}>
             <View style={styles.qrContainer}>
               <View style={styles.qrBox}>
-                <Image 
-                  style={styles.qrImage} 
-                  src={WEBSITE_QR_PATH}
-                />
+                <Image style={styles.qrImage} src={WEBSITE_QR_PATH} />
                 <Text style={styles.qrText}>Visit our Website</Text>
               </View>
             </View>

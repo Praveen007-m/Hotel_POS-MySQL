@@ -5,6 +5,176 @@ import { toast } from "react-toastify";
 import { PlusCircle } from "lucide-react";
 import CustomerForm from "../customers/CustomerForm";
 
+// ─────────────────────────────────────────────────────────────
+// DATE HELPERS  (pure string — zero Date() construction)
+// ─────────────────────────────────────────────────────────────
+
+/** Zero-pad a number to 2 digits */
+const pad = (n) => String(n).padStart(2, "0");
+
+/**
+ * Returns today's date parts using the LOCAL wall clock.
+ * We read from Date only to get year/month/day/hour/min — we never
+ * let the Date object reinterpret a string from the DB or the user.
+ */
+const localNow = () => {
+  const d = new Date(); // safe: no string passed in → no timezone shift
+  return {
+    year: d.getFullYear(),
+    month: d.getMonth() + 1, // 1-based
+    day: d.getDate(),
+    hours: d.getHours(),
+    minutes: d.getMinutes(),
+  };
+};
+
+/**
+ * Build "YYYY-MM-DDThh:mm" from individual parts.
+ * Used only when we construct default check-in/out times from today's date.
+ */
+const buildDateTimeLocal = (year, month, day, hours, minutes) =>
+  `${year}-${pad(month)}-${pad(day)}T${pad(hours)}:${pad(minutes)}`;
+
+/**
+ * Convert a DB datetime string "YYYY-MM-DD HH:mm:ss" (or "YYYY-MM-DD HH:mm")
+ * to the datetime-local input format "YYYY-MM-DDThh:mm".
+ * Pure string manipulation — no Date() construction at all.
+ */
+const dbToInputFormat = (dbString) => {
+  if (!dbString) return "";
+  // Support both "YYYY-MM-DD HH:mm:ss" and "YYYY-MM-DD HH:mm"
+  const [datePart, timePart] = dbString.split(" ");
+  if (!datePart || !timePart) return "";
+  const hhmm = timePart.slice(0, 5); // "HH:mm"
+  return `${datePart}T${hhmm}`;       // "YYYY-MM-DDThh:mm"
+};
+
+/**
+ * Convert "YYYY-MM-DDThh:mm" (datetime-local value) back to
+ * "YYYY-MM-DD HH:mm:ss" for the API payload.
+ * Pure string — no Date() construction.
+ */
+const inputToDbFormat = (inputValue) => {
+  if (!inputValue) return null;
+  // inputValue is "YYYY-MM-DDThh:mm"
+  return inputValue.replace("T", " ") + ":00";
+};
+
+/**
+ * Compute default check-in / check-out strings for a clicked calendar date.
+ *
+ * `clickedDate` is whatever FullCalendar / the calendar widget gives us.
+ *  - If it is a plain "YYYY-MM-DD" string  → use it directly.
+ *  - If it is a Date object (unavoidable from the calendar library)
+ *    → read LOCAL year/month/day so no UTC shift occurs.
+ *
+ * Default times: check-in 13:00, check-out 11:00 next day.
+ */
+const getDefaultDateTimes = (clickedDate) => {
+  let year, month, day;
+
+  if (!clickedDate) {
+    // No date passed — fall back to today (local wall clock)
+    const n = localNow();
+    year = n.year;
+    month = n.month;
+    day = n.day;
+  } else if (typeof clickedDate === "string") {
+    // "YYYY-MM-DD" — split directly, never pass to new Date()
+    const [y, m, d] = clickedDate.split("-").map(Number);
+    year = y;
+    month = m;
+    day = d;
+  } else {
+    // Date object from calendar library — read LOCAL parts only
+    year = clickedDate.getFullYear();
+    month = clickedDate.getMonth() + 1;
+    day = clickedDate.getDate();
+  }
+
+  const checkIn = buildDateTimeLocal(year, month, day, 13, 0);
+
+  // Next day for check-out — increment day safely
+  let coYear = year;
+  let coMonth = month;
+  let coDay = day + 1;
+
+  // Simple day overflow: delegate only the carry to a Date object
+  // constructed from NUMBERS (not strings) — this is safe because
+  // Date(year, month-1, day) uses LOCAL time, no UTC conversion.
+  const nextDay = new Date(year, month - 1, day + 1);
+  coYear = nextDay.getFullYear();
+  coMonth = nextDay.getMonth() + 1;
+  coDay = nextDay.getDate();
+
+  const checkOut = buildDateTimeLocal(coYear, coMonth, coDay, 11, 0);
+
+  return { check_in: checkIn, check_out: checkOut };
+};
+
+// ─────────────────────────────────────────────────────────────
+// STRING-BASED CONFLICT DETECTION
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Normalise any datetime value to the comparable string "YYYY-MM-DD HH:mm".
+ * Accepts:
+ *   "YYYY-MM-DD HH:mm:ss"   → "YYYY-MM-DD HH:mm"
+ *   "YYYY-MM-DDThh:mm"      → "YYYY-MM-DD HH:mm"
+ *   "YYYY-MM-DD HH:mm"      → unchanged
+ * Returns "" for falsy input.
+ */
+const normaliseDateStr = (value) => {
+  if (!value) return "";
+  // Replace T separator, then take first 16 chars → "YYYY-MM-DD HH:mm"
+  return value.replace("T", " ").slice(0, 16);
+};
+
+/**
+ * Adds one day to a "YYYY-MM-DD HH:mm" string without Date() string parsing.
+ * Used ONLY to synthesise a fallback check-out when a booking has none.
+ */
+const addOneDayToStr = (dateTimeStr) => {
+  if (!dateTimeStr) return "";
+  const [datePart, timePart] = dateTimeStr.split(" ");
+  const [y, m, d] = datePart.split("-").map(Number);
+  // Safe: constructed from numbers, uses local time
+  const next = new Date(y, m - 1, d + 1);
+  return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())} ${timePart}`;
+};
+
+/**
+ * Pure string comparison overlap check.
+ * Two intervals [aStart, aEnd) and [bStart, bEnd) overlap when:
+ *   aStart < bEnd  AND  aEnd > bStart
+ * String comparison works correctly for "YYYY-MM-DD HH:mm" format.
+ */
+const intervalsOverlap = (aStart, aEnd, bStart, bEnd) =>
+  aStart < bEnd && aEnd > bStart;
+
+// ─────────────────────────────────────────────────────────────
+// DISPLAY HELPER
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Format "YYYY-MM-DD HH:mm" to a readable "DD MMM YYYY" for warning messages.
+ * Pure string — no Date() construction.
+ */
+const MONTHS = [
+  "Jan","Feb","Mar","Apr","May","Jun",
+  "Jul","Aug","Sep","Oct","Nov","Dec",
+];
+const friendlyDate = (normStr) => {
+  if (!normStr) return "";
+  const [datePart] = normStr.split(" ");
+  const [y, m, d] = datePart.split("-").map(Number);
+  return `${pad(d)} ${MONTHS[m - 1]} ${y}`;
+};
+
+// ─────────────────────────────────────────────────────────────
+// COMPONENT
+// ─────────────────────────────────────────────────────────────
+
 export default function BookingForm({
   initialData,
   selectedDate,
@@ -21,65 +191,14 @@ export default function BookingForm({
 
   const isEditing = Boolean(initialData);
 
-  const pad = (n) => n.toString().padStart(2, "0");
-
-  const formatLocalDateTime = (date) => {
-    return (
-      date.getFullYear() +
-      "-" +
-      pad(date.getMonth() + 1) +
-      "-" +
-      pad(date.getDate()) +
-      "T" +
-      pad(date.getHours()) +
-      ":" +
-      pad(date.getMinutes())
-    );
-  };
-
-  const formatFromDB = (dateString) => {
-    if (!dateString) return "";
-    const date = new Date(dateString);
-    return (
-      date.getFullYear() +
-      "-" +
-      pad(date.getMonth() + 1) +
-      "-" +
-      pad(date.getDate()) +
-      "T" +
-      pad(date.getHours()) +
-      ":" +
-      pad(date.getMinutes())
-    );
-  };
-
-  const getDefaultDateTimes = (clickedDate) => {
-    const base = clickedDate ? new Date(clickedDate) : new Date();
-    const localDate = new Date(
-      base.getFullYear(),
-      base.getMonth(),
-      base.getDate()
-    );
-
-    const checkIn = new Date(localDate);
-    checkIn.setHours(13, 0, 0, 0);
-
-    const checkOut = new Date(localDate);
-    checkOut.setDate(checkOut.getDate() + 1);
-    checkOut.setHours(11, 0, 0, 0);
-
-    return {
-      check_in: formatLocalDateTime(checkIn),
-      check_out: formatLocalDateTime(checkOut),
-    };
-  };
-
+  // ── Initial form state ──────────────────────────────────────
   const [form, setForm] = useState(() => {
     if (initialData && initialData.check_in) {
       return {
         ...initialData,
-        check_in: formatFromDB(initialData.check_in),
-        check_out: formatFromDB(initialData.check_out),
+        // DB format → input format (pure string, no timezone shift)
+        check_in: dbToInputFormat(initialData.check_in),
+        check_out: dbToInputFormat(initialData.check_out),
         price: Number(initialData.price) || "",
         advance_paid: Number(initialData.advance_paid) || "",
         people_count: Number(initialData.people_count) || 1,
@@ -99,25 +218,53 @@ export default function BookingForm({
     };
   });
 
-  const isRoomAvailableForDates = (roomId) => {
-    if (!form.check_in) return true;
+  // ── Conflict detection (string-based) ───────────────────────
+  /**
+   * Returns a conflict object { start, end } (as normalised strings) if the
+   * given roomId overlaps with an existing booking, otherwise null.
+   *
+   * Skips the booking being edited (same booking_id) to allow re-saving.
+   */
+  const getRoomConflict = (roomId) => {
+    const roomBookings = calendarBookings.filter(
+      (b) =>
+        b.room_id === roomId &&
+        // When editing, skip the current booking so it doesn't conflict with itself
+        b.booking_id !== form.booking_id
+    );
+    if (roomBookings.length === 0) return null;
 
-    const checkIn = new Date(form.check_in);
-    const checkOut = form.check_out
-      ? new Date(form.check_out)
-      : new Date(checkIn.getTime() + 24 * 60 * 60 * 1000);
+    // Normalise the form's check-in/out to comparable strings
+    const formStart = normaliseDateStr(form.check_in);
+    const formEnd = form.check_out
+      ? normaliseDateStr(form.check_out)
+      : addOneDayToStr(formStart);
 
-    return !calendarBookings.some((b) => {
-      if (b.room_id !== roomId) return false;
-      const existingStart = new Date(b.check_in);
-      const existingEnd = b.check_out
-        ? new Date(b.check_out)
-        : new Date(existingStart.getTime() + 24 * 60 * 60 * 1000);
-      return checkIn < existingEnd && checkOut > existingStart;
-    });
+    // If no check-in is set yet, treat the first booking on this room as a soft conflict
+    if (!formStart) {
+      const b = roomBookings[0];
+      const bStart = normaliseDateStr(b.check_in);
+      const bEnd = b.check_out
+        ? normaliseDateStr(b.check_out)
+        : addOneDayToStr(bStart);
+      return { start: bStart, end: bEnd };
+    }
+
+    for (const b of roomBookings) {
+      const bStart = normaliseDateStr(b.check_in);
+      const bEnd = b.check_out
+        ? normaliseDateStr(b.check_out)
+        : addOneDayToStr(bStart);
+
+      if (intervalsOverlap(formStart, formEnd, bStart, bEnd)) {
+        return { start: bStart, end: bEnd };
+      }
+    }
+
+    return null;
   };
 
-  /* ===================== FETCH DATA ===================== */
+  // ── Fetch data on mount ─────────────────────────────────────
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -138,6 +285,7 @@ export default function BookingForm({
         setAvailableAddons(resAddons.data);
         setCalendarBookings(resCalendar.data);
 
+        // Build initial add_ons map from fetched addons
         const addonsObj = {};
         resAddons.data.forEach((a) => {
           addonsObj[a.name] = false;
@@ -161,14 +309,12 @@ export default function BookingForm({
     fetchData();
   }, [initialData]);
 
-  /* ===================== AUTO PRICE ===================== */
+  // ── Auto-fill price when room changes ──────────────────────
   useEffect(() => {
     if (!form.room_id) return;
 
     const selectedRoom = rooms.find((r) => r.id === Number(form.room_id));
-
     if (selectedRoom) {
-      // ✅ Always store as a clean Number, never a string with ₹
       setForm((prev) => ({
         ...prev,
         price: Number(selectedRoom.price_per_night) || 0,
@@ -177,75 +323,66 @@ export default function BookingForm({
     }
   }, [form.room_id, rooms]);
 
+  // ── Recompute room warning when dates or room changes ───────
   useEffect(() => {
     if (!form.room_id) return;
     const conflict = getRoomConflict(form.room_id);
     if (conflict) {
       setRoomWarning(
-        `⚠️ This room is already booked from ${conflict.start.toLocaleDateString()} to ${conflict.end.toLocaleDateString()}`
+        `⚠️ This room is already booked from ${friendlyDate(conflict.start)} to ${friendlyDate(conflict.end)}`
       );
     } else {
       setRoomWarning("");
     }
-  }, [form.check_in, form.check_out, form.room_id]);
+  }, [form.check_in, form.check_out, form.room_id, calendarBookings]);
 
-  /* ===================== HANDLERS ===================== */
-  const getRoomConflict = (roomId) => {
-    const roomBookings = calendarBookings.filter((b) => b.room_id === roomId);
-    if (roomBookings.length === 0) return null;
-
-    if (!form.check_in) {
-      const b = roomBookings[0];
-      return {
-        start: new Date(b.check_in),
-        end: b.check_out
-          ? new Date(b.check_out)
-          : new Date(new Date(b.check_in).getTime() + 24 * 60 * 60 * 1000),
-        reason: "nodates",
-      };
-    }
-
-    const checkIn = new Date(form.check_in);
-    const checkOut = form.check_out
-      ? new Date(form.check_out)
-      : new Date(checkIn.getTime() + 24 * 60 * 60 * 1000);
-
-    for (const b of roomBookings) {
-      const existingStart = new Date(b.check_in);
-      const existingEnd = b.check_out
-        ? new Date(b.check_out)
-        : new Date(existingStart.getTime() + 24 * 60 * 60 * 1000);
-
-      if (checkIn < existingEnd && checkOut > existingStart) {
-        return { start: existingStart, end: existingEnd, reason: "overlap" };
-      }
-    }
-
-    return null;
-  };
-
+  // ── Generic field handler ───────────────────────────────────
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  // ── Room selector ───────────────────────────────────────────
   const handleRoomChange = (e) => {
     const roomId = Number(e.target.value);
     if (!roomId) return;
 
-    const conflict = getRoomConflict(roomId);
-
     setForm((prev) => ({ ...prev, room_id: roomId }));
+
+    // Conflict check will run via useEffect above; but we can also set immediately
+    // by computing against current form dates (room_id update is async in state,
+    // so we pass roomId directly here).
+    const roomBookings = calendarBookings.filter(
+      (b) => b.room_id === roomId && b.booking_id !== form.booking_id
+    );
+
+    const formStart = normaliseDateStr(form.check_in);
+    const formEnd = form.check_out
+      ? normaliseDateStr(form.check_out)
+      : addOneDayToStr(formStart);
+
+    let conflict = null;
+    for (const b of roomBookings) {
+      const bStart = normaliseDateStr(b.check_in);
+      const bEnd = b.check_out
+        ? normaliseDateStr(b.check_out)
+        : addOneDayToStr(bStart);
+      if (!formStart || intervalsOverlap(formStart, formEnd, bStart, bEnd)) {
+        conflict = { start: bStart, end: bEnd };
+        break;
+      }
+    }
 
     if (conflict) {
       setRoomWarning(
-        `This room is already booked from ${conflict.start.toLocaleDateString()} to ${conflict.end.toLocaleDateString()}`
+        `⚠️ This room is already booked from ${friendlyDate(conflict.start)} to ${friendlyDate(conflict.end)}`
       );
     } else {
       setRoomWarning("");
     }
   };
 
+  // ── Add-on toggle ───────────────────────────────────────────
   const toggleAddon = (addonName) => {
     setForm((prev) => ({
       ...prev,
@@ -256,6 +393,7 @@ export default function BookingForm({
     }));
   };
 
+  // ── Inline customer creation ────────────────────────────────
   const handleSaveCustomer = async (formData) => {
     try {
       const config = { headers: { "Content-Type": "multipart/form-data" } };
@@ -275,8 +413,8 @@ export default function BookingForm({
     }
   };
 
+  // ── Submit ──────────────────────────────────────────────────
   const handleSubmit = () => {
-    // ── Frontend validation ───────────────────────────────────────────────
     if (!form.customer_id) {
       toast.warning("Please select a customer.");
       return;
@@ -297,12 +435,11 @@ export default function BookingForm({
     const conflict = getRoomConflict(form.room_id);
     if (conflict) {
       toast.warning(
-        `Cannot save booking. Room is already booked from ${conflict.start.toLocaleDateString()} to ${conflict.end.toLocaleDateString()}`
+        `Cannot save booking. Room is already booked from ${friendlyDate(conflict.start)} to ${friendlyDate(conflict.end)}`
       );
       return;
     }
 
-    // ── Build add-ons array ───────────────────────────────────────────────
     const selectedAddOns = availableAddons
       .filter((addon) => form.add_ons[addon.name])
       .map((addon) => ({
@@ -310,25 +447,27 @@ export default function BookingForm({
         amount: addon.price,
       }));
 
-    // ✅ Sanitize all numeric fields before sending — no strings, no ₹ symbols
     const payload = {
       booking_id: form.booking_id,
       customer_id: Number(form.customer_id),
       room_id: Number(form.room_id),
-      check_in: form.check_in || null,
-      check_out: form.check_out || null,
+      // Convert datetime-local strings back to DB format (pure string, no Date())
+      check_in: inputToDbFormat(form.check_in),
+      check_out: inputToDbFormat(form.check_out),
       status: form.status || "Confirmed",
-      price: Number(form.price),                          // ✅ clean number
-      advance_paid: Number(form.advance_paid) || 0,       // ✅ clean number
-      people_count: Number(form.people_count) || 1,       // ✅ clean number
+      price: Number(form.price),
+      advance_paid: Number(form.advance_paid) || 0,
+      people_count: Number(form.people_count) || 1,
       add_ons: selectedAddOns,
     };
 
-    console.log("📦 Submitting booking payload:", payload); // helpful for debugging
+    console.log("📦 Submitting booking payload:", payload);
     onSubmit(payload);
   };
 
-  /* ===================== UI ===================== */
+  // ─────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────
   return (
     <div>
       <h2 className="text-2xl font-bold text-[#0A1B4D] mb-6">
@@ -446,7 +585,7 @@ export default function BookingForm({
           )}
         </div>
 
-        {/* Price — display only, value stored as Number in state */}
+        {/* Price */}
         <div>
           <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
             Room Price
@@ -531,7 +670,7 @@ export default function BookingForm({
         </div>
       </div>
 
-      {/* ================= ADD-ONS ================= */}
+      {/* Add-ons */}
       <div className="mt-6">
         <p className="text-sm font-medium text-gray-700 mb-3 uppercase">
           Add-ons
@@ -554,7 +693,7 @@ export default function BookingForm({
         </div>
       </div>
 
-      {/* ================= BUTTONS ================= */}
+      {/* Action buttons */}
       <div className="flex justify-end gap-3 mt-8">
         <button
           onClick={onCancel}
@@ -570,7 +709,7 @@ export default function BookingForm({
         </button>
       </div>
 
-      {/* ================= CUSTOMER MODAL ================= */}
+      {/* Customer modal */}
       {showCustomerModal && (
         <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 relative">

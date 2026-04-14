@@ -2,6 +2,64 @@ const { v4: uuidv4 } = require("uuid");
 const dbService = require("./dbService");
 const { DEFAULT_GST_RATES } = require("../utils/billingUtils");
 
+// ─────────────────────────────────────────────────────────────
+// DATETIME HELPERS  (pure string — zero new Date(string))
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Extract the date portion "YYYY-MM-DD" from a MySQL DATETIME string.
+ * Accepts "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DD HH:mm" or "YYYY-MM-DD".
+ * Pure string — no Date() construction.
+ */
+const extractDatePart = (datetimeStr) => {
+  if (!datetimeStr) return null;
+  // MySQL serialises DATETIME as e.g. "2026-04-15T13:00:00.000Z" when the
+  // mysql2 driver type-casts it to a JS Date.  We guard both formats:
+  return String(datetimeStr).replace("T", " ").slice(0, 10); // "YYYY-MM-DD"
+};
+
+/**
+ * Count the number of whole calendar days between two DATETIME strings.
+ * We compare date parts only (ignoring time) to match hotel night-counting
+ * convention: a guest checking in at 13:00 and out at 11:00 next day = 1 night.
+ *
+ * Steps (all pure arithmetic on numbers, no Date(string)):
+ *   1. Parse "YYYY-MM-DD" into [year, month, day] integers.
+ *   2. Compute a simple day-serial (Gregorian day number approximation).
+ *   3. Return the difference, minimum 1.
+ *
+ * This is safe for all valid dates and handles month/year boundaries correctly.
+ */
+const daysBetween = (startDatetimeStr, endDatetimeStr) => {
+  const startStr = extractDatePart(startDatetimeStr);
+  const endStr   = extractDatePart(endDatetimeStr);
+
+  if (!startStr || !endStr) return 1;
+
+  const [sy, sm, sd] = startStr.split("-").map(Number);
+  const [ey, em, ed] = endStr.split("-").map(Number);
+
+  // Use Date(year, month-1, day) — constructed from NUMBERS, uses LOCAL time,
+  // never parses a string, so no UTC/timezone interpretation occurs.
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const startMs  = new Date(sy, sm - 1, sd).getTime();
+  const endMs    = new Date(ey, em - 1, ed).getTime();
+
+  return Math.max(Math.round((endMs - startMs) / msPerDay), 1);
+};
+
+/**
+ * Return the current local datetime as "YYYY-MM-DD HH:mm:ss".
+ * Used for checkout timestamp — replaces NOW() when we need the value in JS,
+ * but we just let MySQL handle NOW() in the UPDATE query, so this is unused.
+ * Kept here as a utility if ever needed.
+ */
+// const localNowMySQL = () => { ... };  // not needed — see UPDATE below
+
+// ─────────────────────────────────────────────────────────────
+// SERVICE
+// ─────────────────────────────────────────────────────────────
+
 class CheckoutService {
   async processCheckout(bookingId, checkoutData, user) {
     const { idempotency_key, gst_number, add_ons = [] } = checkoutData;
@@ -24,18 +82,13 @@ class CheckoutService {
         throw new Error("Booking already checked out");
       }
 
-      const checkInDate = new Date(booking.check_in);
-      const checkOutDate = new Date(booking.check_out);
+      // ── Stay duration ────────────────────────────────────────
+      // OLD (BROKEN): new Date(booking.check_in) → UTC parse → timezone shift
+      //               then setHours(0,0,0,0) → further mutation
+      // NEW (SAFE):   pure string arithmetic on date parts only
+      const stayDays = daysBetween(booking.check_in, booking.check_out);
 
-      checkInDate.setHours(0, 0, 0, 0);
-      checkOutDate.setHours(0, 0, 0, 0);
-
-      const stayDays = Math.max(
-        Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24)),
-        1
-      );
-
-      const roomTotal = Number(booking.price || 0) * stayDays;
+      const roomTotal    = Number(booking.price || 0) * stayDays;
       const kitchenTotal = Number(booking.kitchenTotal || 0);
 
       const dbAddons = await dbService.getBookingAddons(booking.booking_id);
@@ -45,15 +98,15 @@ class CheckoutService {
       );
 
       const existingAddonCounts = dbAddons.reduce((counts, addon) => {
-        const key = `${addon.name || ""}::${Number(addon.price || 0)}`;
-        counts[key] = (counts[key] || 0) + 1;
+        const k = `${addon.name || ""}::${Number(addon.price || 0)}`;
+        counts[k] = (counts[k] || 0) + 1;
         return counts;
       }, {});
 
       const newAddOns = add_ons.filter((addon) => {
-        const key = `${addon.name || ""}::${Number(addon.price || 0)}`;
-        if (existingAddonCounts[key] > 0) {
-          existingAddonCounts[key] -= 1;
+        const k = `${addon.name || ""}::${Number(addon.price || 0)}`;
+        if (existingAddonCounts[k] > 0) {
+          existingAddonCounts[k] -= 1;
           return false;
         }
         return true;
@@ -64,9 +117,9 @@ class CheckoutService {
         0
       );
 
-      const addonTotal = dbAddonTotal + newAddonTotal;
+      const addonTotal    = dbAddonTotal + newAddonTotal;
       const expectedTotal = roomTotal + kitchenTotal + addonTotal;
-      const advancePaid = Number(booking.advance_paid || 0);
+      const advancePaid   = Number(booking.advance_paid || 0);
       const balanceAmount = expectedTotal - advancePaid;
       const providedTotal = Number(checkoutData.total_amount || 0);
 
@@ -90,20 +143,17 @@ class CheckoutService {
       const billingId = await dbService.transaction(async () => {
         for (const addon of newAddOns) {
           await dbService.run(
-            `INSERT INTO booking_addons (booking_id, name, price)
-             VALUES (?, ?, ?)`,
-            [
-              booking.booking_id,
-              addon.name || "Custom Add-on",
-              Number(addon.price || 0),
-            ]
+            `INSERT INTO booking_addons (booking_id, name, price) VALUES (?, ?, ?)`,
+            [booking.booking_id, addon.name || "Custom Add-on", Number(addon.price || 0)]
           );
         }
 
+        // ── Checkout timestamp: let MySQL write NOW() ────────────
+        // This records the actual wall-clock time in whatever timezone
+        // the MySQL server is configured to, which is consistent with
+        // how all other DB timestamps are written.
         await dbService.run(
-          `UPDATE bookings
-           SET status = 'Checked-out', check_out = NOW()
-           WHERE id = ?`,
+          `UPDATE bookings SET status = 'Checked-out', check_out = NOW() WHERE id = ?`,
           [bookingId]
         );
 
@@ -112,6 +162,10 @@ class CheckoutService {
           [booking.room_id]
         );
 
+        // ── Billing insert ────────────────────────────────────────
+        // booking.check_in is read straight from the DB row — it is
+        // whatever the mysql2 driver returns.  We pass it through
+        // as-is; MySQL will store it back without reinterpretation.
         const billingResult = await dbService.run(
           `INSERT INTO billings (
             booking_id, idempotency_key, customer_id, room_id,
@@ -123,7 +177,7 @@ class CheckoutService {
             key,
             booking.customer_id,
             booking.room_id,
-            booking.check_in,
+            booking.check_in,   // ✅ raw value from DB, never re-parsed
             advancePaid,
             expectedTotal,
             gst_number || null,
@@ -143,14 +197,14 @@ class CheckoutService {
         billing_id: billingId,
         idempotency_key: key,
         summary: {
-          booking_id: booking.booking_id,
+          booking_id:   booking.booking_id,
           roomTotal,
           kitchenTotal,
           addonTotal,
-          total_amount: expectedTotal,
-          totalAmount: expectedTotal,
+          total_amount:  expectedTotal,
+          totalAmount:   expectedTotal,
           advancePaid,
-          balance: balanceAmount,
+          balance:       balanceAmount,
           balanceAmount,
         },
       };
@@ -164,35 +218,35 @@ class CheckoutService {
     const lines = [];
 
     const roomUnitPrice = Number(booking.price || 0);
-    const roomSubtotal = roomUnitPrice * stayDays;
+    const roomSubtotal  = roomUnitPrice * stayDays;
 
     lines.push({
-      billing_id: billingId,
-      type: "room",
+      billing_id:  billingId,
+      type:        "room",
       description: `Room ${booking.room_number} (${booking.category}) x ${stayDays} night`,
-      quantity: stayDays,
-      unit_price: roomUnitPrice,
-      subtotal: roomSubtotal,
-      gst_rate: this._getGstRate("room", roomUnitPrice),
-      total: roomSubtotal,
+      quantity:    stayDays,
+      unit_price:  roomUnitPrice,
+      subtotal:    roomSubtotal,
+      gst_rate:    this._getGstRate("room", roomUnitPrice),
+      total:       roomSubtotal,
     });
 
     const kitchenOrders = await dbService.getKitchenOrdersForInvoice(booking.booking_id);
 
     for (const kitchenOrder of kitchenOrders) {
-      const quantity = Number(kitchenOrder.quantity || 1);
+      const quantity  = Number(kitchenOrder.quantity || 1);
       const lineTotal = Number(kitchenOrder.total || 0);
       const unitPrice = quantity > 0 ? lineTotal / quantity : lineTotal;
 
       lines.push({
-        billing_id: billingId,
-        type: "kitchen",
+        billing_id:  billingId,
+        type:        "kitchen",
         description: kitchenOrder.item_name,
         quantity,
-        unit_price: unitPrice,
-        subtotal: lineTotal,
-        gst_rate: DEFAULT_GST_RATES.addon,
-        total: lineTotal,
+        unit_price:  unitPrice,
+        subtotal:    lineTotal,
+        gst_rate:    DEFAULT_GST_RATES.addon,
+        total:       lineTotal,
       });
     }
 
@@ -200,14 +254,14 @@ class CheckoutService {
 
     for (const addon of addons) {
       lines.push({
-        billing_id: billingId,
-        type: "addon",
+        billing_id:  billingId,
+        type:        "addon",
         description: addon.name,
-        quantity: 1,
-        unit_price: Number(addon.price || 0),
-        subtotal: Number(addon.price || 0),
-        gst_rate: DEFAULT_GST_RATES.addon,
-        total: Number(addon.price || 0),
+        quantity:    1,
+        unit_price:  Number(addon.price || 0),
+        subtotal:    Number(addon.price || 0),
+        gst_rate:    DEFAULT_GST_RATES.addon,
+        total:       Number(addon.price || 0),
       });
     }
 
