@@ -353,11 +353,16 @@ export const HotelInvoiceDocument = ({
 
   const numDays = (() => {
     if (selectedBill?.check_in && selectedBill?.check_out) {
-      const diffTime = Math.abs(
-        new Date(selectedBill.check_out) - new Date(selectedBill.check_in),
+      const d1 = new Date(selectedBill.check_in);
+      const d2 = new Date(selectedBill.check_out);
+      const msPerDay = 1000 * 60 * 60 * 24;
+      
+      const diffDays = Math.round(
+        (new Date(d2.getFullYear(), d2.getMonth(), d2.getDate()) - 
+         new Date(d1.getFullYear(), d1.getMonth(), d1.getDate())) / msPerDay
       );
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays > 0 ? diffDays : 1;
+      
+      return Math.max(diffDays, 1);
     }
     return 1;
   })();

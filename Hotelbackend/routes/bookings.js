@@ -309,74 +309,119 @@ router.get("/:id", requireAuth, async (req, res) => {
 // PUT - UPDATE BOOKING STATUS
 router.put("/:id", requireAuth, async (req, res) => {
   try {
-    const { status, discount, add_ons } = req.body;
+    const bookingId = req.params.id;
+    const {
+      status,
+      discount,
+      add_ons,
+      customer_id,
+      room_id,
+      check_in,
+      check_out,
+      price,
+      advance_paid,
+      people_count,
+    } = req.body;
 
+    // 1. Fetch current booking to see what changed
+    const [currentRows] = await db.query("SELECT * FROM bookings WHERE id = ?", [bookingId]);
+    const current = currentRows[0];
+    if (!current) return res.status(404).json({ error: "Booking not found" });
+
+    // 2. Prepare update fields
     let updateFields = [];
     let params = [];
 
-    if (status) {
-      updateFields.push("status = ?");
-      params.push(status);
-    }
-    if (discount !== undefined) {
-      updateFields.push("discount = ?");
-      params.push(Number(discount));
-    }
-    if (add_ons) {
+    const addField = (name, val) => {
+      if (val !== undefined) {
+        updateFields.push(`${name} = ?`);
+        params.push(val);
+        return true;
+      }
+      return false;
+    };
+
+    addField("status", status);
+    addField("discount", discount !== undefined ? Number(discount) : undefined);
+    addField("customer_id", customer_id !== undefined ? Number(customer_id) : undefined);
+    addField("room_id", room_id !== undefined ? Number(room_id) : undefined);
+    addField("price", price !== undefined ? Number(price) : undefined);
+    addField("advance_paid", advance_paid !== undefined ? Number(advance_paid) : undefined);
+    addField("people_count", people_count !== undefined ? Number(people_count) : undefined);
+
+    if (check_in !== undefined)  addField("check_in",  toMySQLDateTime(check_in));
+    if (check_out !== undefined) addField("check_out", toMySQLDateTime(check_out));
+
+    if (add_ons !== undefined) {
       updateFields.push("add_ons = ?");
       params.push(JSON.stringify(add_ons));
     }
 
-    if (updateFields.length > 0) {
-      params.push(req.params.id);
-      const [updateBookings] = await db.query(
-        `UPDATE bookings SET ${updateFields.join(", ")} WHERE id = ?`,
-        params
+    if (updateFields.length === 0) {
+      return res.json({ message: "No changes provided" });
+    }
+
+    // 3. Conflict Check if room or dates changed
+    const effectiveRoomId  = room_id !== undefined ? Number(room_id) : current.room_id;
+    const effectiveCheckIn = check_in !== undefined ? toMySQLDateTime(check_in) : current.check_in;
+    const effectiveCheckOut = check_out !== undefined ? toMySQLDateTime(check_out) : current.check_out;
+
+    if (room_id !== undefined || check_in !== undefined || check_out !== undefined) {
+      console.log(`🔍 Checking availability for Room ${effectiveRoomId} between ${effectiveCheckIn} and ${effectiveCheckOut}`);
+      const [conflictRows] = await db.query(
+        `SELECT COUNT(*) AS conflictCount
+         FROM bookings
+         WHERE room_id = ?
+           AND id != ?
+           AND status IN ('Confirmed', 'Checked-in')
+           AND check_in  < ?
+           AND (check_out IS NULL OR check_out > ?)`,
+        [effectiveRoomId, bookingId, effectiveCheckOut || effectiveCheckIn, effectiveCheckIn]
       );
-      if (updateBookings.affectedRows === 0) {
-        return res.status(404).json({ error: "Booking not found" });
+      if (conflictRows[0]?.conflictCount > 0) {
+        console.log("⚠️ Conflict detected!");
+        return res.status(409).json({ error: "Room is not available for the selected dates" });
       }
     }
 
-    // If add_ons were updated, sync the booking_addons table
+    // 4. Update Bookings Table
+    params.push(bookingId);
+    console.log("📝 Executing Update with Fields:", updateFields.join(", "), "Params:", params);
+    await db.query(`UPDATE bookings SET ${updateFields.join(", ")} WHERE id = ?`, params);
+
+    // 5. Sync booking_addons if changed
     if (add_ons) {
-      const [bookingRow] = await db.query("SELECT booking_id FROM bookings WHERE id = ?", [req.params.id]);
-      if (bookingRow[0]) {
-        const bId = bookingRow[0].booking_id;
-        await db.query("DELETE FROM booking_addons WHERE booking_id = ?", [bId]);
-        if (Array.isArray(add_ons)) {
-          for (const addon of add_ons) {
-            await db.query(
-              "INSERT INTO booking_addons (booking_id, name, price) VALUES (?, ?, ?)",
-              [bId, addon.description || addon.label || addon.name, Number(addon.amount || addon.price || 0)]
-            );
-          }
+      const bIdStr = current.booking_id;
+      await db.query("DELETE FROM booking_addons WHERE booking_id = ?", [bIdStr]);
+      if (Array.isArray(add_ons)) {
+        for (const addon of add_ons) {
+          await db.query(
+            "INSERT INTO booking_addons (booking_id, name, price) VALUES (?, ?, ?)",
+            [bIdStr, addon.description || addon.label || addon.name, Number(addon.amount || addon.price || 0)]
+          );
         }
       }
     }
 
-    // FIX: defined roomStatus before use, and closed the if (status) block properly
-    if (status) {
-      const roomStatus =
-        status === "Checked-in"  ? "Occupied"  :
-        status === "Checked-out" ? "Available" :
-        status === "Cancelled"   ? "Available" :
-        "Booked";
+    // 6. Update room status if status or room_id changed
+    const finalStatus = status || current.status;
+    const roomStatus =
+      finalStatus === "Checked-in"  ? "Occupied"  :
+      finalStatus === "Checked-out" ? "Available" :
+      finalStatus === "Cancelled"   ? "Available" :
+      "Booked";
 
-      const [rowResult] = await db.query(
-        "SELECT room_id FROM bookings WHERE id = ?",
-        [req.params.id]
-      );
-      const row = rowResult[0];
-      if (!row) return res.status(404).json({ error: "Booking not found" });
-
-      await db.query("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, row.room_id]);
+    // If room changed, make old room available
+    if (room_id && Number(room_id) !== current.room_id) {
+      await db.query("UPDATE rooms SET status = 'Available' WHERE id = ?", [current.room_id]);
     }
+    // Update current/new room status
+    await db.query("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, effectiveRoomId]);
 
-    res.json({ message: "Booking updated successfully" });
+    res.json({ message: "Booking updated effectively" });
   } catch (err) {
     console.error("Update booking error:", err);
-    res.status(500).json({ error: "Update failed" });
+    res.status(500).json({ error: "Update failed: " + err.message });
   }
 });
 

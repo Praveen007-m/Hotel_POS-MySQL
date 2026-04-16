@@ -168,14 +168,14 @@ class CheckoutService {
           );
         }
 
-        // ── Checkout timestamp: let MySQL write NOW() ────────────
-        // This records the actual wall-clock time in whatever timezone
-        // the MySQL server is configured to, which is consistent with
-        // how all other DB timestamps are written.
-        await dbService.run(
-          `UPDATE bookings SET status = 'Checked-out', check_out = NOW() WHERE id = ?`,
-          [bookingId]
-        );
+        // ── Checkout timestamp: use provided checkout date or NOW() ────────────
+        const finalCheckoutDate = checkoutData.check_out ? checkoutData.check_out : 'NOW()';
+        const checkoutSql = checkoutData.check_out 
+          ? `UPDATE bookings SET status = 'Checked-out', check_out = ? WHERE id = ?`
+          : `UPDATE bookings SET status = 'Checked-out', check_out = NOW() WHERE id = ?`;
+        const checkoutParams = checkoutData.check_out ? [checkoutData.check_out, bookingId] : [bookingId];
+        
+        await dbService.run(checkoutSql, checkoutParams);
 
         await dbService.run(
           `UPDATE rooms SET status = 'Available' WHERE id = ?`,
@@ -186,18 +186,32 @@ class CheckoutService {
         // booking.check_in is read straight from the DB row — it is
         // whatever the mysql2 driver returns.  We pass it through
         // as-is; MySQL will store it back without reinterpretation.
-        const billingResult = await dbService.run(
-          `INSERT INTO billings (
+        const billingSql = `INSERT INTO billings (
             booking_id, idempotency_key, customer_id, room_id,
             check_in, check_out, advance_paid, discount, total_amount, final_amount,
             gst_number, billed_by_id, billed_by_name, billed_by_role
-          ) VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            booking.booking_id,
-            key,
-            booking.customer_id,
-            booking.room_id,
-            booking.check_in,
+          ) VALUES (?, ?, ?, ?, ?, ${checkoutData.check_out ? '?' : 'NOW()'}, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+        const billingParams = [
+          booking.booking_id,
+          key,
+          booking.customer_id,
+          booking.room_id,
+          booking.check_in
+        ];
+        if (checkoutData.check_out) billingParams.push(checkoutData.check_out);
+        billingParams.push(
+          advancePaid,
+          discountToApply,
+          expectedTotal,
+          balanceAmount,
+          gstNumber || null,
+          staffId,
+          staffName,
+          staffRole
+        );
+
+        const billingResult = await dbService.run(billingSql, billingParams);
             advancePaid,
             discountToApply,
             grossTotal,

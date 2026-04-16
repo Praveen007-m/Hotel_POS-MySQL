@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, LogOut, Trash2 } from "lucide-react";
 const ITEMS_PER_PAGE = 6;
 
 /* ================= FIXED-POSITION ACTIONS MENU ================= */
-const ActionsMenu = ({ booking, onDelete }) => {
+const ActionsMenu = ({ booking, onDelete, onEdit }) => {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef(null);
@@ -63,8 +63,20 @@ const ActionsMenu = ({ booking, onDelete }) => {
           <div className="rounded-xl bg-white shadow-2xl ring-1 ring-black ring-opacity-[0.07] overflow-hidden">
             <div className="py-1">
               <button
+                onClick={() => { setOpen(false); onEdit(booking); }}
+                className="group flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-500 group-hover:bg-indigo-200 transition-colors shrink-0">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </span>
+                <span className="font-medium">Edit Booking</span>
+              </button>
+
+              <button
                 onClick={() => { setOpen(false); onDelete(booking.id); }}
-                className="group flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors"
+                className="group flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors border-t border-gray-50"
               >
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-500 group-hover:bg-red-200 transition-colors shrink-0">
                   <Trash2 size={13} />
@@ -161,6 +173,7 @@ export default function BookingTable({
   formatDate,
   onDelete,
   onStatusChange,
+  onEdit,
 }) {
   const { user } = useAuth();
   const [page, setPage] = useState(1);
@@ -218,6 +231,7 @@ export default function BookingTable({
                   <th className="px-3 py-3 text-left">Customer</th>
                   <th className="px-3 py-3 text-left">Room</th>
                   <th className="px-3 py-3 text-left hidden sm:table-cell">Check-in</th>
+                  <th className="px-3 py-3 text-left hidden lg:table-cell">Check-out</th>
                   <th className="px-3 py-3 text-left hidden md:table-cell">Price</th>
                   <th className="px-3 py-3 text-left">Status</th>
                   <th className="px-3 py-3 text-center w-[60px]">Actions</th>
@@ -309,6 +323,18 @@ export default function BookingTable({
                           </div>
                         </td>
 
+                        {/* Check-out */}
+                        <td className="px-3 py-3 hidden lg:table-cell">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[12px] font-semibold text-gray-700 whitespace-nowrap">
+                              {booking.check_out ? formatDate(booking.check_out) : "N/A"}
+                            </span>
+                            <span className="text-[9px] text-gray-400 font-medium uppercase tracking-wide">
+                              Check-out
+                            </span>
+                          </div>
+                        </td>
+
                         {/* Price */}
                         <td className="px-3 py-3 hidden md:table-cell">
                           <div className="flex flex-col gap-0.5">
@@ -334,6 +360,7 @@ export default function BookingTable({
                         <ActionsMenu
                           booking={booking}
                           onDelete={onDelete}
+                          onEdit={onEdit}
                         />
 
                         </td>

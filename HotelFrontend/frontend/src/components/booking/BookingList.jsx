@@ -10,6 +10,7 @@ export default function BookingList({
   loading,
   onDelete,
   onStatusUpdate,
+  onEdit,
 }) {
   const [checkoutBooking, setCheckoutBooking] = useState(null);
   const [checkoutData, setCheckoutData] = useState({});
@@ -376,6 +377,7 @@ export default function BookingList({
         formatDate={formatDate}
         onDelete={onDelete}
         onStatusChange={handleStatusChange}
+        onEdit={onEdit}
       />
 
       {checkoutBooking && (

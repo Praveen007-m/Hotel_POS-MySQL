@@ -137,8 +137,7 @@ export default function Booking() {
   };
 
 
-  /* ================= UI ================= */
-  return (
+  /* ================= UI ================= */  return (
     <Container>
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Bookings</h1>
@@ -173,8 +172,11 @@ export default function Booking() {
         loading={loading || searchLoading}
         onDelete={handleDelete}
         onStatusUpdate={handleStatusUpdate}
+        onEdit={(booking) => {
+          setEditingBooking(booking);
+          setModalOpen(true);
+        }}
       />
-
 
       {modalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
