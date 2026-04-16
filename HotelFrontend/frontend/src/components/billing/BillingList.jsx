@@ -211,7 +211,7 @@ const BillingList = () => {
         room_price: roomCharges,
         add_ons: parseBillAddOns(res.data.add_ons),
         kitchen_orders: res.data.kitchen_orders || [],
-        discount: 0,
+        discount: Number(res.data.discount || 0),
       });
 
       setRowGstStatus((prev) => ({

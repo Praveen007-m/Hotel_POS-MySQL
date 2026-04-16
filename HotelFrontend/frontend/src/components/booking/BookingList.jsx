@@ -53,15 +53,41 @@ export default function BookingList({
       : "-";
 
   const recomputeTotals = (price, stayDays, addons, currentKitchenTotal = 0) => {
-    const roomTotal = Number(price || 0) * Number(stayDays || 1);
-
-    const nextAddonTotal = Object.values(addons || {}).reduce(
-      (sum, addon) => sum + (addon.selected ? Number(addon.price || 0) : 0),
+    const roomSubtotal = Number(price || 0) * Number(stayDays || 1);
+    const kitchenSubtotal = Number(currentKitchenTotal || 0);
+    const addonSubtotal = Object.values(addons || {}).reduce(
+      (sum, addon) => sum + (addon.selected && addon.price ? Number(addon.price) : 0),
       0
     );
 
-    const totalAmount = roomTotal + Number(currentKitchenTotal || 0) + nextAddonTotal - Number(addons?.discount || 0);
-    return { roomTotal, addonTotal: nextAddonTotal, totalAmount };
+    // GST Calculation logic matching backend (billingUtils)
+    const calculateGST = (amount, type) => {
+      let rate = 0.05; // 5% default
+      if (type === "room" && amount / (stayDays || 1) > 7500) {
+        rate = 0.18; // 18% for high-value rooms
+      }
+      return Number((amount * rate).toFixed(2));
+    };
+
+    const roomGst = calculateGST(roomSubtotal, "room");
+    const kitchenGst = calculateGST(kitchenSubtotal, "kitchen");
+    const addonGst = calculateGST(addonSubtotal, "addon");
+
+    const subtotal = roomSubtotal + kitchenSubtotal + addonSubtotal;
+    const gstTotal = roomGst + kitchenGst + addonGst;
+    const totalAmount = Number((subtotal + gstTotal).toFixed(2));
+
+    return { 
+      roomTotal: roomSubtotal, 
+      roomGst,
+      kitchenTotal: kitchenSubtotal,
+      kitchenGst,
+      addonTotal: addonSubtotal, 
+      addonGst,
+      gstTotal,
+      subtotal,
+      totalAmount 
+    };
   };
 
   const buildAddonMap = (booking, previewAddOns = []) => {
@@ -139,7 +165,14 @@ export default function BookingList({
     const addons = buildAddonMap(booking, preview?.add_ons || []);
     const nextKitchenTotal = Number(preview?.kitchenTotal || preview?.kitchen_total || 0);
     const {
+      roomTotal: nextRoomTotal,
+      roomGst,
+      kitchenTotal: nextKitchenTotalReturn,
+      kitchenGst,
       addonTotal: nextAddonTotal,
+      addonGst,
+      gstTotal,
+      subtotal,
       totalAmount,
     } = recomputeTotals(roomPrice, stayDays, addons, nextKitchenTotal);
 
@@ -149,14 +182,21 @@ export default function BookingList({
     setCheckoutData({
       check_out: new Date().toISOString().slice(0, 16),
       roomPrice,
-      price: Number(preview?.roomTotal || preview?.room_charges || roomTotal),
+      price: roomTotal,
       stayDays,
       add_ons: addons,
       kitchenTotal: nextKitchenTotal,
       addonTotal: nextAddonTotal,
+      roomTotal: nextRoomTotal,
+      roomGst,
+      kitchenTotalReturn: nextKitchenTotalReturn,
+      kitchenGst,
+      addonGst,
+      subtotal,
+      gstTotal,
       totalAmount,
       advancePaid: Number(preview?.advancePaid || preview?.advance_paid || advancePaid),
-      balanceAmount: totalAmount - Number(preview?.advancePaid || preview?.advance_paid || advancePaid),
+      balanceAmount: totalAmount - Number(booking.discount || 0) - Number(preview?.advancePaid || preview?.advance_paid || advancePaid),
       status: booking.status,
       gstNumber: booking.gst_number || "",
       discount: Number(booking.discount || 0),
@@ -182,21 +222,34 @@ export default function BookingList({
       [key]: { label: addon.name, price: Number(addon.price), selected: true },
     };
 
-    const { addonTotal: nextAddonTotal, totalAmount } = recomputeTotals(
-      checkoutData.roomPrice,
-      checkoutData.stayDays,
-      updatedAddons,
-      kitchenTotal
-    );
-
-    setAddonTotal(nextAddonTotal);
-    setCheckoutData((prev) => ({
-      ...prev,
-      add_ons: updatedAddons,
-      addonTotal: nextAddonTotal,
-      totalAmount,
-      balanceAmount: totalAmount - Number(prev.advancePaid || 0),
+        const { 
+      roomTotal, 
+      roomGst, 
+      kitchenTotal: kTotal, 
+      kitchenGst, 
+      addonTotal: nextAddonTotal, 
+      addonGst,
+      subtotal,
+      gstTotal, 
+      totalAmount 
+    } = recomputeTotals(checkoutData.roomPrice, checkoutData.stayDays, updatedAddons, kitchenTotal); 
+    
+    setAddonTotal(nextAddonTotal); 
+    setCheckoutData((prev) => ({ 
+      ...prev, 
+      add_ons: updatedAddons, 
+      addonTotal: nextAddonTotal, 
+      roomTotal,
+      roomGst,
+      kitchenTotalReturn: kTotal,
+      kitchenGst,
+      addonGst,
+      subtotal,
+      gstTotal, 
+      totalAmount, 
+      balanceAmount: totalAmount - Number(prev.discount || 0) - Number(prev.advancePaid || 0), 
     }));
+
 
     setSelectedAddonId("");
     toast.success(`${addon.name} added`);
@@ -211,21 +264,34 @@ export default function BookingList({
       },
     };
 
-    const { addonTotal: nextAddonTotal, totalAmount } = recomputeTotals(
-      checkoutData.roomPrice,
-      checkoutData.stayDays,
-      updatedAddons,
-      kitchenTotal
-    );
-
-    setAddonTotal(nextAddonTotal);
-    setCheckoutData((prev) => ({
-      ...prev,
-      add_ons: updatedAddons,
-      addonTotal: nextAddonTotal,
-      totalAmount,
-      balanceAmount: totalAmount - Number(prev.advancePaid || 0),
+        const { 
+      roomTotal, 
+      roomGst, 
+      kitchenTotal: kTotal, 
+      kitchenGst, 
+      addonTotal: nextAddonTotal, 
+      addonGst,
+      subtotal,
+      gstTotal, 
+      totalAmount 
+    } = recomputeTotals(checkoutData.roomPrice, checkoutData.stayDays, updatedAddons, kitchenTotal); 
+    
+    setAddonTotal(nextAddonTotal); 
+    setCheckoutData((prev) => ({ 
+      ...prev, 
+      add_ons: updatedAddons, 
+      addonTotal: nextAddonTotal, 
+      roomTotal,
+      roomGst,
+      kitchenTotalReturn: kTotal,
+      kitchenGst,
+      addonGst,
+      subtotal,
+      gstTotal, 
+      totalAmount, 
+      balanceAmount: totalAmount - Number(prev.discount || 0) - Number(prev.advancePaid || 0), 
     }));
+
   };
 
   const confirmCheckout = async () => {
@@ -244,7 +310,7 @@ export default function BookingList({
       await auth.post(`/bookings/${checkoutBooking.id}/checkout`, {
         check_out: checkoutData.check_out,
         add_ons: finalAddOns,
-        total_amount: totalAmount,
+        total_amount: checkoutData.totalAmount,
         discount: Number(checkoutData.discount || 0),
         gst_number: checkoutData.gstNumber || undefined,
       });
@@ -356,8 +422,18 @@ export default function BookingList({
                 onChange={(e) => {
                   const val = Number(e.target.value) || 0;
                   setCheckoutData((prev) => {
-                    const nextAddons = { ...prev.add_ons, discount: val };
-                    const { totalAmount } = recomputeTotals(
+                    const nextAddons = { ...prev.add_ons };
+                    const { 
+                      roomTotal, 
+                      roomGst, 
+                      kitchenTotal: kTotal, 
+                      kitchenGst, 
+                      addonTotal: nextAddonTotal, 
+                      addonGst,
+                      subtotal,
+                      gstTotal, 
+                      totalAmount 
+                    } = recomputeTotals(
                       prev.roomPrice,
                       prev.stayDays,
                       nextAddons,
@@ -366,8 +442,15 @@ export default function BookingList({
                     return {
                       ...prev,
                       discount: val,
+                      roomTotal,
+                      roomGst,
+                      kitchenTotalReturn: kTotal,
+                      kitchenGst,
+                      addonGst,
+                      subtotal,
+                      gstTotal,
                       totalAmount,
-                      balanceAmount: totalAmount - Number(prev.advancePaid || 0),
+                      balanceAmount: totalAmount - val - Number(prev.advancePaid || 0),
                     };
                   });
                 }}
@@ -425,34 +508,50 @@ export default function BookingList({
 
             <div className="mt-4 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-4 space-y-2">
               <h3 className="font-semibold text-gray-800 mb-3">Bill Summary</h3>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Room Charges:</span>
-                <span className="font-medium">₹{Number(checkoutData.price || 0).toFixed(2)}</span>
+              
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Room Charges:</span>
+                <span className="font-medium">₹{Number(checkoutData.roomTotal || 0).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Kitchen Charges:</span>
-                <span className="font-medium">₹{Number(kitchenTotal || 0).toFixed(2)}</span>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400 italic">Room GST:</span>
+                <span className="text-gray-500 font-medium text-[10px]">₹{Number(checkoutData.roomGst || 0).toFixed(2)}</span>
               </div>
+
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Kitchen Charges:</span>
+                <span className="font-medium">₹{Number(checkoutData.kitchenTotalReturn || checkoutData.kitchenTotal || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400 italic">Kitchen GST:</span>
+                <span className="text-gray-500 font-medium text-[10px]">₹{Number(checkoutData.kitchenGst || 0).toFixed(2)}</span>
+              </div>
+
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Add-on Charges:</span>
+                <span className="font-medium">₹{Number(checkoutData.addonTotal || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400 italic">Add-on GST:</span>
+                <span className="text-gray-500 font-medium text-[10px]">₹{Number(checkoutData.addonGst || 0).toFixed(2)}</span>
+              </div>
+
+              <hr className="border-blue-100 my-2" />
+
               <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Add-ons:</span>
-                <span className="font-medium">₹{Number(addonTotal || 0).toFixed(2)}</span>
+                <span className="text-gray-700">Subtotal (Charges + GST):</span>
+                <span className="font-medium">₹{Number(checkoutData.totalAmount || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm text-red-500">
                 <span className="text-gray-700">Discount:</span>
                 <span className="font-medium">- ₹{Number(checkoutData.discount || 0).toFixed(2)}</span>
               </div>
-              <div className="border-t border-blue-200 pt-2 flex justify-between">
-                <span className="font-semibold text-gray-800">Total Amount:</span>
-                <span className="font-bold text-lg text-blue-700">
-                  ₹{Number(checkoutData.totalAmount || 0).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm text-green-600 mt-1">
+              <div className="flex justify-between text-sm text-green-600">
                 <span>Advance Paid:</span>
                 <span>- ₹{Number(checkoutData.advancePaid || 0).toFixed(2)}</span>
               </div>
               <div className="border-t border-blue-200 pt-2 flex justify-between font-bold text-red-600">
-                <span>Balance Amount:</span>
+                <span>Balance Payable:</span>
                 <span className="text-lg">₹{Number(checkoutData.balanceAmount || 0).toFixed(2)}</span>
               </div>
             </div>

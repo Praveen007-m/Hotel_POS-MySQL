@@ -367,7 +367,19 @@ export const HotelInvoiceDocument = ({
   );
 
   const roomPrice = Number(form?.room_price || 0);
-  const addOns = Array.isArray(form?.add_ons) ? form.add_ons : [];
+  
+  // Consolidate Saved Add-ons (from DB) and New Add-ons (from session)
+  const savedAddOns = (selectedBill?.lines?.addon || []).map(a => ({
+    name: a.description || "Add-on",
+    price: Number(a.total || 0),
+    qty: Number(a.quantity || 1)
+  }));
+  const newAddOns = (Array.isArray(form?.add_ons) ? form.add_ons : []).map(a => ({
+    name: a.name || a.label || "Add-on",
+    price: Number(a.price || 0),
+    qty: Number(a.qty || 1)
+  }));
+  const allAddOns = [...savedAddOns, ...newAddOns];
 
   let kitchenItems = [];
   if (selectedBill?.lines?.kitchen && Array.isArray(selectedBill.lines.kitchen)) {
@@ -502,18 +514,31 @@ export const HotelInvoiceDocument = ({
           <View style={styles.tableRow}>
             <Text style={styles.col1}>{lineItemDateOnly}</Text>
             <Text style={styles.col2}>
-              Room Tariff{" "}
-              {roomDiscountVal > 0
-                ? `(Discount: -₹${roomDiscountVal.toFixed(2)})`
-                : ""}
+              Room Tariff
             </Text>
-            <Text style={styles.col3}>{discountedRoomTariff.toFixed(2)}</Text>
+            <Text style={styles.col3}>{roomPrice.toFixed(2)}</Text>
             <Text style={styles.col4}>0.00</Text>
-            <Text style={styles.col5}>{discountedRoomTariff.toFixed(2)}</Text>
+            <Text style={styles.col5}>{roomPrice.toFixed(2)}</Text>
           </View>
 
-          {/* Add-ons */}
-          {addOns.map((addon, i) => {
+          {/* Kitchen Items */}
+          {kitchenItems.map((item, i) => {
+            const itemTotal = Number(item.subtotal || item.total || 0);
+            return (
+              <View style={styles.tableRow} key={`kitchen-${i}`}>
+                <Text style={styles.col1}>{lineItemDateOnly}</Text>
+                <Text style={styles.col2}>
+                  {item.description || item.name} (Qty: {item.quantity || item.qty})
+                </Text>
+                <Text style={styles.col3}>{itemTotal.toFixed(2)}</Text>
+                <Text style={styles.col4}>0.00</Text>
+                <Text style={styles.col5}>{itemTotal.toFixed(2)}</Text>
+              </View>
+            );
+          })}
+
+          {/* All Add-ons (Saved + New) */}
+          {allAddOns.map((addon, i) => {
             const addonTotal = Number(addon.price) * Number(addon.qty);
             return (
               <View style={styles.tableRow} key={`addon-${i}`}>
@@ -524,22 +549,6 @@ export const HotelInvoiceDocument = ({
                 <Text style={styles.col3}>{addonTotal.toFixed(2)}</Text>
                 <Text style={styles.col4}>0.00</Text>
                 <Text style={styles.col5}>{addonTotal.toFixed(2)}</Text>
-              </View>
-            );
-          })}
-
-          {/* Kitchen Items */}
-          {kitchenItems.map((item, i) => {
-            const itemTotal = Number(item.subtotal || 0);
-            return (
-              <View style={styles.tableRow} key={`kitchen-${i}`}>
-                <Text style={styles.col1}>{lineItemDateOnly}</Text>
-                <Text style={styles.col2}>
-                  {item.description || item.name} (Qty: {item.quantity})
-                </Text>
-                <Text style={styles.col3}>{itemTotal.toFixed(2)}</Text>
-                <Text style={styles.col4}>0.00</Text>
-                <Text style={styles.col5}>{itemTotal.toFixed(2)}</Text>
               </View>
             );
           })}
@@ -599,18 +608,18 @@ export const HotelInvoiceDocument = ({
             <Text style={styles.col3}></Text>
             <Text style={styles.col4}></Text>
             <Text style={[styles.col5, styles.boldText]}>
-              {subtotalWithGst.toFixed(2)}
+              {Number(totalAmount || 0).toFixed(2)}
             </Text>
           </View>
 
           <View style={styles.tableRow}>
             <Text style={styles.col1}></Text>
-            <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
+            <Text style={[styles.col5, styles.boldText, { textAlign: "right" }]}>
               Gross Value
             </Text>
             <Text style={styles.col3}></Text>
             <Text style={styles.col4}></Text>
-            <Text style={styles.col5}>{totalGrossValue.toFixed(2)}</Text>
+            <Text style={styles.col5}>{Number(totalAmount || 0).toFixed(2)}</Text>
           </View>
 
           <View style={styles.tableRow}>
@@ -632,7 +641,7 @@ export const HotelInvoiceDocument = ({
               <Text style={styles.col3}></Text>
               <Text style={styles.col4}></Text>
               <Text style={styles.col5}>
-                -{Number(guestDiscount).toFixed(2)}
+                -{Number(guestDiscount || 0).toFixed(2)}
               </Text>
             </View>
           )}
@@ -644,7 +653,7 @@ export const HotelInvoiceDocument = ({
             </Text>
             <Text style={styles.col3}></Text>
             <Text style={styles.col4}></Text>
-            <Text style={styles.col5}>{Number(advancePaid).toFixed(2)}</Text>
+            <Text style={styles.col5}>{Number(advancePaid || 0).toFixed(2)}</Text>
           </View>
 
           <View style={styles.tableRowLast}>
@@ -655,7 +664,7 @@ export const HotelInvoiceDocument = ({
             <Text style={styles.col3}></Text>
             <Text style={styles.col4}></Text>
             <Text style={[styles.col5, styles.boldText]}>
-              {Number(balanceAmount).toFixed(2)}
+              {Number(balanceAmount || 0).toFixed(2)}
             </Text>
           </View>
         </View>

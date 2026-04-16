@@ -119,22 +119,40 @@ class CheckoutService {
 
       const addonTotal    = dbAddonTotal + newAddonTotal;
       const discountToApply = Number(discount || booking.discount || 0);
-
-      const expectedTotal = roomTotal + kitchenTotal + addonTotal - discountToApply;
       const advancePaid   = Number(booking.advance_paid || 0);
-      const balanceAmount = expectedTotal - advancePaid;
-      const providedTotal = Number(checkoutData.total_amount || 0);
 
-      console.log("Checkout Debug:", {
+      const billingUtils = require("../utils/billingUtils");
+
+      // 1. Calculate base subtotal
+      const subtotalBase = roomTotal + kitchenTotal + addonTotal;
+
+      // 2. Calculate GST totals
+      const roomGstInfo = billingUtils.computeGST("room", roomTotal);
+      const kitchenGstInfo = billingUtils.computeGST("kitchen", kitchenTotal);
+      const addonGstInfo = billingUtils.computeGST("addon", addonTotal);
+
+      const totalGst = roomGstInfo.gst_amount + kitchenGstInfo.gst_amount + addonGstInfo.gst_amount;
+
+      // 3. Gross Total (Total + GST)
+      const grossTotal = Number((subtotalBase + totalGst).toFixed(2));
+
+      // 4. Final Balance (TotalWithGST - Discount - Advance)
+      const afterDiscount = grossTotal - discountToApply;
+      const finalAmount = Number((afterDiscount - advancePaid).toFixed(2));
+
+      console.log("Checkout Calculation:", {
         stayDays,
-        roomTotal,
-        kitchenTotal,
-        dbAddonTotal,
-        newAddonTotal,
-        addonTotal,
-        expectedTotal,
-        providedTotal,
+        subtotalBase,
+        totalGst,
+        grossTotal,
+        discountToApply,
+        advancePaid,
+        finalAmount
       });
+
+      const expectedTotal = grossTotal; // Aligning with the new definition of "Total Amount"
+      const balanceAmount = finalAmount;
+      const providedTotal = Number(checkoutData.total_amount || 0);
 
       if (Math.abs(expectedTotal - providedTotal) > 1) {
         console.warn(
@@ -171,9 +189,9 @@ class CheckoutService {
         const billingResult = await dbService.run(
           `INSERT INTO billings (
             booking_id, idempotency_key, customer_id, room_id,
-            check_in, check_out, advance_paid, discount, total_amount,
+            check_in, check_out, advance_paid, discount, total_amount, final_amount,
             gst_number, billed_by_id, billed_by_name, billed_by_role
-          ) VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             booking.booking_id,
             key,
@@ -182,7 +200,8 @@ class CheckoutService {
             booking.check_in,
             advancePaid,
             discountToApply,
-            expectedTotal,
+            grossTotal,
+            finalAmount,
             gst_number || null,
             user.id,
             user.name,

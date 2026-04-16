@@ -81,8 +81,6 @@ const BillingModal = ({
     );
 
     const addOnsTotal = backendAddOnsTotal + newAddOnsTotal;
-    const discount = Number(safeForm.discount || 0);
-    const discountedRoom = Math.max(roomCharges - discount, 0);
     const roomGstRate = getRoomGstRate(roomCharges);
 
     return {
@@ -91,7 +89,6 @@ const BillingModal = ({
       backendAddOnsTotal,
       newAddOnsTotal,
       addOnsTotal,
-      discountedRoom,
       roomGstRate,
     };
   }, [selectedBill, safeForm]);
@@ -104,16 +101,18 @@ const BillingModal = ({
     addon: DEFAULT_GST_RATES.addon,
   };
 
-  const subtotal = discountedRoom + kitchenCharges + addOnsTotal;
-  const roomGst = gstIncluded ? discountedRoom * safeGst.room : 0;
+  const subtotal = roomCharges + kitchenCharges + addOnsTotal;
+  const roomGst = gstIncluded ? roomCharges * safeGst.room : 0;
   const kitchenGst = gstIncluded ? kitchenCharges * safeGst.kitchen : 0;
   const addOnsGst = gstIncluded ? addOnsTotal * safeGst.addon : 0;
   const totalGst = roomGst + kitchenGst + addOnsGst;
   const subtotalWithGst = subtotal + totalGst;
-  const totalAmount = subtotalWithGst - guestDiscount;
-
+  
+  // Combine all discount sources into one
+  const appliedDiscount = Number(safeForm.discount || 0) + Number(guestDiscount || 0);
+  const totalAmountWithGst = subtotalWithGst; 
   const advancePaid = Number(selectedBill.advance_paid || 0);
-  const balanceAmount = totalAmount - advancePaid;
+  const balanceAmount = Number((totalAmountWithGst - appliedDiscount - advancePaid).toFixed(2));
 
   const roomGstPercent = Number((safeGst.room * 100).toFixed(2));
   const kitchenGstPercent = Number((safeGst.kitchen * 100).toFixed(2));
@@ -346,9 +345,6 @@ const BillingModal = ({
             <p><b>Room Charges:</b> Rs{roomCharges.toFixed(2)}</p>
             <p><b>Kitchen Charges:</b> Rs{kitchenCharges.toFixed(2)}</p>
 
-            {safeForm.discount > 0 && (
-              <p><b>Room Discount:</b> - Rs{Number(safeForm.discount).toFixed(2)}</p>
-            )}
 
             {backendAddOnsTotal > 0 && (
               <p><b>Add-ons (saved):</b> Rs{backendAddOnsTotal.toFixed(2)}</p>
@@ -379,16 +375,20 @@ const BillingModal = ({
 
             <p><b>Subtotal with GST:</b> Rs{subtotalWithGst.toFixed(2)}</p>
 
-            {guestDiscount > 0 && (
-              <p><b>Guest Discount:</b> - Rs{guestDiscount.toFixed(2)}</p>
-            )}
 
             <hr className="my-2 border-gray-300" />
 
             <p className="flex justify-between">
-              <span><b>Total Amount:</b></span>
-              <span>Rs{totalAmount.toFixed(2)}</span>
+              <span><b>Total Amount (Incl. GST):</b></span>
+              <span>Rs{totalAmountWithGst.toFixed(2)}</span>
             </p>
+
+            {appliedDiscount > 0 && (
+              <p className="flex justify-between text-orange-600">
+                <span><b>Discount:</b></span>
+                <span>- Rs{appliedDiscount.toFixed(2)}</span>
+              </p>
+            )}
 
             <p className="flex justify-between text-green-600 font-medium">
               <span><b>Advance Paid:</b></span>
@@ -398,7 +398,7 @@ const BillingModal = ({
             <hr className="my-2 border-gray-300" />
 
             <p className="flex justify-between text-lg font-bold text-red-600">
-              <span>Balance Amount:</span>
+              <span>Balance Payable:</span>
               <span>Rs{balanceAmount.toFixed(2)}</span>
             </p>
           </div>
@@ -424,9 +424,10 @@ const BillingModal = ({
                   },
                   subtotal,
                   subtotalWithGst,
-                  totalAmount,
+                  totalAmount: totalAmountWithGst,
                   advancePaid,
                   balanceAmount,
+                  guestDiscount: appliedDiscount,
                   formatIST,
                   action: "download",
                 });
