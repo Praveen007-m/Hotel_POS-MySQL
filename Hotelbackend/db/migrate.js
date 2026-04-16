@@ -26,6 +26,10 @@ const migrations = [
 
   // ── Rooms: capacity column ────────────────────────────────────────────────
   `ALTER TABLE rooms ADD COLUMN capacity INT DEFAULT 2`,
+
+  // ── Discount support ──────────────────────────────────────────────────────
+  `ALTER TABLE bookings ADD COLUMN discount DECIMAL(10,2) DEFAULT 0`,
+  `ALTER TABLE billings ADD COLUMN discount DECIMAL(10,2) DEFAULT 0`,
 ];
 
 async function columnExists(tableName, columnName) {

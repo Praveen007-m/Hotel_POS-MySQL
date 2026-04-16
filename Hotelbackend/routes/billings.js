@@ -142,11 +142,16 @@ router.get("/export/csv", async (req, res) => {
       b.id AS id,
       c.name AS customer_name,
       b.gst_number,
-      CONCAT(r.room_number, ' / ', r.category) AS room_description,
-      b.room_price
+      COALESCE(
+        CONCAT(r_live.room_number, ' / ', r_live.category),
+        CONCAT(r_stale.room_number, ' / ', r_stale.category)
+      ) AS room_description,
+      b.total_amount AS room_price
     FROM billings b
+    LEFT JOIN bookings bk ON bk.booking_id = b.booking_id
+    LEFT JOIN rooms r_live ON r_live.id = bk.room_id
+    LEFT JOIN rooms r_stale ON r_stale.id = b.room_id
     LEFT JOIN customers c ON c.id = b.customer_id
-    LEFT JOIN rooms r ON r.id = b.room_id
     ORDER BY b.created_at DESC
   `;
 

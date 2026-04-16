@@ -62,7 +62,7 @@ const daysBetween = (startDatetimeStr, endDatetimeStr) => {
 
 class CheckoutService {
   async processCheckout(bookingId, checkoutData, user) {
-    const { idempotency_key, gst_number, add_ons = [] } = checkoutData;
+    const { idempotency_key, gst_number, add_ons = [], discount = 0 } = checkoutData;
 
     const key = idempotency_key || uuidv4();
 
@@ -118,7 +118,9 @@ class CheckoutService {
       );
 
       const addonTotal    = dbAddonTotal + newAddonTotal;
-      const expectedTotal = roomTotal + kitchenTotal + addonTotal;
+      const discountToApply = Number(discount || booking.discount || 0);
+
+      const expectedTotal = roomTotal + kitchenTotal + addonTotal - discountToApply;
       const advancePaid   = Number(booking.advance_paid || 0);
       const balanceAmount = expectedTotal - advancePaid;
       const providedTotal = Number(checkoutData.total_amount || 0);
@@ -169,16 +171,17 @@ class CheckoutService {
         const billingResult = await dbService.run(
           `INSERT INTO billings (
             booking_id, idempotency_key, customer_id, room_id,
-            check_in, check_out, advance_paid, total_amount,
+            check_in, check_out, advance_paid, discount, total_amount,
             gst_number, billed_by_id, billed_by_name, billed_by_role
-          ) VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)`,
           [
             booking.booking_id,
             key,
             booking.customer_id,
             booking.room_id,
-            booking.check_in,   // ✅ raw value from DB, never re-parsed
+            booking.check_in,
             advancePaid,
+            discountToApply,
             expectedTotal,
             gst_number || null,
             user.id,
@@ -187,7 +190,7 @@ class CheckoutService {
           ]
         );
 
-        await this._createLineItems(billingResult.lastID, booking, stayDays);
+        await this._createLineItems(billingResult.lastID, booking, stayDays, discountToApply);
 
         return billingResult.lastID;
       });
@@ -214,7 +217,7 @@ class CheckoutService {
     }
   }
 
-  async _createLineItems(billingId, booking, stayDays = 1) {
+  async _createLineItems(billingId, booking, stayDays = 1, appliedDiscount = 0) {
     const lines = [];
 
     const roomUnitPrice = Number(booking.price || 0);
@@ -262,6 +265,19 @@ class CheckoutService {
         subtotal:    Number(addon.price || 0),
         gst_rate:    DEFAULT_GST_RATES.addon,
         total:       Number(addon.price || 0),
+      });
+    }
+
+    if (appliedDiscount > 0) {
+      lines.push({
+        billing_id:  billingId,
+        type:        "discount",
+        description: "Discount Applied",
+        quantity:    1,
+        unit_price:  -appliedDiscount,
+        subtotal:    -appliedDiscount,
+        gst_rate:    0,
+        total:       -appliedDiscount,
       });
     }
 

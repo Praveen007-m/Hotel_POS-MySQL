@@ -60,7 +60,7 @@ export default function BookingList({
       0
     );
 
-    const totalAmount = roomTotal + Number(currentKitchenTotal || 0) + nextAddonTotal;
+    const totalAmount = roomTotal + Number(currentKitchenTotal || 0) + nextAddonTotal - Number(addons?.discount || 0);
     return { roomTotal, addonTotal: nextAddonTotal, totalAmount };
   };
 
@@ -114,13 +114,13 @@ export default function BookingList({
   };
 
   const openCheckout = async (booking) => {
-    const checkInDate = new Date(booking.check_in);
-    const checkOutDate = new Date(booking.check_out);
-    checkInDate.setHours(0, 0, 0, 0);
-    checkOutDate.setHours(0, 0, 0, 0);
-
+    const d1 = new Date(booking.check_in);
+    const d2 = new Date(booking.check_out);
+    // Standard hotel night calculation (check-out date - check-in date)
+    const msPerDay = 1000 * 60 * 60 * 24;
     const stayDays = Math.max(
-      Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24)),
+      Math.round((new Date(d2.getFullYear(), d2.getMonth(), d2.getDate()) - 
+                  new Date(d1.getFullYear(), d1.getMonth(), d1.getDate())) / msPerDay),
       1
     );
 
@@ -159,6 +159,7 @@ export default function BookingList({
       balanceAmount: totalAmount - Number(preview?.advancePaid || preview?.advance_paid || advancePaid),
       status: booking.status,
       gstNumber: booking.gst_number || "",
+      discount: Number(booking.discount || 0),
     });
   };
 
@@ -244,6 +245,7 @@ export default function BookingList({
         check_out: checkoutData.check_out,
         add_ons: finalAddOns,
         total_amount: totalAmount,
+        discount: Number(checkoutData.discount || 0),
         gst_number: checkoutData.gstNumber || undefined,
       });
 
@@ -343,6 +345,36 @@ export default function BookingList({
               />
             </div>
 
+            <div className="mb-3">
+              <label className="block text-sm font-medium mb-1">
+                Discount (₹)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={checkoutData.discount || 0}
+                onChange={(e) => {
+                  const val = Number(e.target.value) || 0;
+                  setCheckoutData((prev) => {
+                    const nextAddons = { ...prev.add_ons, discount: val };
+                    const { totalAmount } = recomputeTotals(
+                      prev.roomPrice,
+                      prev.stayDays,
+                      nextAddons,
+                      kitchenTotal
+                    );
+                    return {
+                      ...prev,
+                      discount: val,
+                      totalAmount,
+                      balanceAmount: totalAmount - Number(prev.advancePaid || 0),
+                    };
+                  });
+                }}
+                className="w-full border px-3 py-2 rounded"
+              />
+            </div>
+
             <p className="font-medium mb-2">Add-ons:</p>
             <div className="flex flex-wrap gap-2 mb-3">
               {Object.entries(checkoutData.add_ons || {})
@@ -404,6 +436,10 @@ export default function BookingList({
               <div className="flex justify-between text-sm">
                 <span className="text-gray-700">Add-ons:</span>
                 <span className="font-medium">₹{Number(addonTotal || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-red-500">
+                <span className="text-gray-700">Discount:</span>
+                <span className="font-medium">- ₹{Number(checkoutData.discount || 0).toFixed(2)}</span>
               </div>
               <div className="border-t border-blue-200 pt-2 flex justify-between">
                 <span className="font-semibold text-gray-800">Total Amount:</span>

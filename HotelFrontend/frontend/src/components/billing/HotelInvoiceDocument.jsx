@@ -345,7 +345,7 @@ export const HotelInvoiceDocument = ({
 
   const billNo = selectedBill?.bill_id || selectedBill?.id || "N/A";
   const dateStr = formatDateTime(new Date());
-  const roomCat = selectedBill?.room_category || "Standard Room";
+  const roomCat = selectedBill?.category || "N/A";
   const pax = selectedBill?.pax || "2";
   const nationality = "Indian";
   const checkInStr = formatDateTime(selectedBill?.check_in);
@@ -460,7 +460,7 @@ export const HotelInvoiceDocument = ({
             <View style={styles.rightTableRow}>
               <Text style={styles.detailLabel}>Room</Text>
               <Text style={styles.detailValue}>
-                {selectedBill?.room_id || "N/A"}
+                {selectedBill?.room_number || "N/A"}
               </Text>
               <Text style={styles.detailLabel}>Pax</Text>
               <Text style={styles.detailValueLast}>{pax}</Text>

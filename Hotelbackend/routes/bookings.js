@@ -92,25 +92,14 @@ router.get("/", requireAuth, async (req, res) => {
   try {
     const query = `
       SELECT
-        b.id,
-        b.booking_id,
-        b.check_in,
-        b.check_out,
-        b.status,
-        b.price,
-        b.advance_paid,
-        b.add_ons,
-        b.people_count,
-        b.created_by_id,
-        b.created_by_name,
-        b.created_by_role,
+        b.*,
         c.name    AS customer_name,
         c.contact AS customer_contact,
         r.room_number,
-        r.category AS room_category
+        r.category
       FROM bookings b
-      JOIN customers c ON b.customer_id = c.id
-      JOIN rooms r ON b.room_id = r.id
+      LEFT JOIN customers c ON b.customer_id = c.id
+      LEFT JOIN rooms r ON b.room_id = r.id
       ORDER BY b.id DESC
     `;
     const [rows] = await db.query(query);
@@ -132,6 +121,7 @@ router.post("/", requireAuth, async (req, res) => {
       check_out,
       status,
       add_ons,
+      discount,
     } = req.body;
 
     const price        = Number(req.body.price)        || 0;
@@ -153,12 +143,10 @@ router.post("/", requireAuth, async (req, res) => {
     }
 
     // ── Convert incoming datetime strings safely ─────────────
-    // toMySQLDateTime handles "YYYY-MM-DDThh:mm" and already-correct formats.
-    // It NEVER constructs a Date object, so no timezone shift can occur.
     const checkInStr  = toMySQLDateTime(check_in);
     const checkOutStr = toMySQLDateTime(check_out);
 
-    // ── check_out must be after check_in (string compare is safe here) ──
+    // ── check_out must be after check_in ────────────────────
     if (checkInStr && checkOutStr && !dtLessThan(checkInStr, checkOutStr)) {
       return res.status(400).json({ error: "Check-out must be after check-in" });
     }
@@ -191,8 +179,6 @@ router.post("/", requireAuth, async (req, res) => {
     }
 
     // ── Availability check ───────────────────────────────────
-    // All comparisons done inside MySQL against raw DATETIME columns —
-    // no JavaScript Date() objects involved.
     const [availabilityRows] = await db.query(
       `SELECT COUNT(*) AS conflictCount
        FROM bookings
@@ -213,28 +199,40 @@ router.post("/", requireAuth, async (req, res) => {
     const bookingStatus = status || "Confirmed";
 
     // ── Insert ───────────────────────────────────────────────
+    // FIX: was missing `const [insertResult] = await db.query(` opener
     const [insertResult] = await db.query(
       `INSERT INTO bookings
          (booking_id, customer_id, room_id, check_in, check_out, status,
-          price, add_ons, people_count, advance_paid,
+          price, add_ons, people_count, advance_paid, discount,
           created_by_id, created_by_name, created_by_role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         booking_id,
         Number(customer_id),
         Number(room_id),
-        checkInStr,          // ✅ plain string, no timezone shift
-        checkOutStr,         // ✅ plain string, no timezone shift
+        checkInStr,
+        checkOutStr,
         bookingStatus,
         price,
         JSON.stringify(add_ons || []),
         people_count,
         advance_paid,
+        discount,
         created_by_id,
         created_by_name,
         created_by_role,
       ]
     );
+
+    // ── Insert into booking_addons table ─────────────────────
+    if (Array.isArray(add_ons) && add_ons.length > 0) {
+      for (const addon of add_ons) {
+        await db.query(
+          "INSERT INTO booking_addons (booking_id, name, price) VALUES (?, ?, ?)",
+          [booking_id, addon.description || addon.label || addon.name, Number(addon.amount || addon.price || 0)]
+        );
+      }
+    }
 
     const roomStatus = bookingStatus === "Checked-in" ? "Occupied" : "Booked";
     await db.query("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, room_id]);
@@ -288,24 +286,14 @@ router.get("/:id", requireAuth, async (req, res) => {
   try {
     const query = `
       SELECT
-        b.id,
-        b.booking_id,
-        b.check_in,
-        b.check_out,
-        b.status,
-        b.price,
-        b.advance_paid,
-        b.add_ons,
-        b.created_by_id,
-        b.created_by_name,
-        b.created_by_role,
+        b.*,
         c.name    AS customer_name,
         c.contact AS customer_contact,
         r.room_number,
-        r.category AS room_category
+        r.category
       FROM bookings b
-      JOIN customers c ON b.customer_id = c.id
-      JOIN rooms r ON b.room_id = r.id
+      LEFT JOIN customers c ON b.customer_id = c.id
+      LEFT JOIN rooms r ON b.room_id = r.id
       WHERE b.id = ?
     `;
     const [rows] = await db.query(query, [req.params.id]);
@@ -321,35 +309,71 @@ router.get("/:id", requireAuth, async (req, res) => {
 // PUT - UPDATE BOOKING STATUS
 router.put("/:id", requireAuth, async (req, res) => {
   try {
-    const { status } = req.body;
-    if (!status) {
-      return res.status(400).json({ error: "status field is required" });
+    const { status, discount, add_ons } = req.body;
+
+    let updateFields = [];
+    let params = [];
+
+    if (status) {
+      updateFields.push("status = ?");
+      params.push(status);
+    }
+    if (discount !== undefined) {
+      updateFields.push("discount = ?");
+      params.push(Number(discount));
+    }
+    if (add_ons) {
+      updateFields.push("add_ons = ?");
+      params.push(JSON.stringify(add_ons));
     }
 
-    const roomStatus =
-      status === "Checked-in"  ? "Occupied"  :
-      status === "Checked-out" ? "Available" :
-      status === "Confirmed"   ? "Booked"    :
-                                 "Available";
-
-    const [updateBookings] = await db.query(
-      "UPDATE bookings SET status = ? WHERE id = ?",
-      [status, req.params.id]
-    );
-    if (updateBookings.affectedRows === 0) {
-      return res.status(404).json({ error: "Booking not found" });
+    if (updateFields.length > 0) {
+      params.push(req.params.id);
+      const [updateBookings] = await db.query(
+        `UPDATE bookings SET ${updateFields.join(", ")} WHERE id = ?`,
+        params
+      );
+      if (updateBookings.affectedRows === 0) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
     }
 
-    const [rowResult] = await db.query(
-      "SELECT room_id FROM bookings WHERE id = ?",
-      [req.params.id]
-    );
-    const row = rowResult[0];
-    if (!row) return res.status(404).json({ error: "Booking not found" });
+    // If add_ons were updated, sync the booking_addons table
+    if (add_ons) {
+      const [bookingRow] = await db.query("SELECT booking_id FROM bookings WHERE id = ?", [req.params.id]);
+      if (bookingRow[0]) {
+        const bId = bookingRow[0].booking_id;
+        await db.query("DELETE FROM booking_addons WHERE booking_id = ?", [bId]);
+        if (Array.isArray(add_ons)) {
+          for (const addon of add_ons) {
+            await db.query(
+              "INSERT INTO booking_addons (booking_id, name, price) VALUES (?, ?, ?)",
+              [bId, addon.description || addon.label || addon.name, Number(addon.amount || addon.price || 0)]
+            );
+          }
+        }
+      }
+    }
 
-    await db.query("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, row.room_id]);
+    // FIX: defined roomStatus before use, and closed the if (status) block properly
+    if (status) {
+      const roomStatus =
+        status === "Checked-in"  ? "Occupied"  :
+        status === "Checked-out" ? "Available" :
+        status === "Cancelled"   ? "Available" :
+        "Booked";
 
-    res.json({ message: "Status updated successfully" });
+      const [rowResult] = await db.query(
+        "SELECT room_id FROM bookings WHERE id = ?",
+        [req.params.id]
+      );
+      const row = rowResult[0];
+      if (!row) return res.status(404).json({ error: "Booking not found" });
+
+      await db.query("UPDATE rooms SET status = ? WHERE id = ?", [roomStatus, row.room_id]);
+    }
+
+    res.json({ message: "Booking updated successfully" });
   } catch (err) {
     console.error("Update booking error:", err);
     res.status(500).json({ error: "Update failed" });

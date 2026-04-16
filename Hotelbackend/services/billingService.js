@@ -66,7 +66,7 @@ class BillingService {
       customer_address: booking.address,
       room_id: booking.room_id,
       room_number: booking.room_number,
-      room_category: booking.category,
+      category: booking.category,
       check_in: booking.check_in,
       check_out: booking.check_out,
       stay_days: stayDays,
@@ -123,9 +123,10 @@ class BillingService {
     const billings = await dbService.all(`
       SELECT 
         b.id,
-        b.booking_id AS booking_id,   -- ✅ FIXED: Use billings.booking_id directly (it has the formatted codes or numeric IDs)
+        b.booking_id AS booking_id,
         b.customer_id,
         b.room_id,
+        COALESCE(r_live.room_number, r_stale.room_number) AS room_number,
         b.total_amount,
         b.advance_paid,
         b.created_at,
@@ -136,14 +137,18 @@ class BillingService {
         COUNT(i.id) as line_items_count,
         SUM(i.total) as line_items_total
       FROM billings b 
+      LEFT JOIN bookings bk ON b.booking_id = bk.booking_id
+      LEFT JOIN rooms r_live ON bk.room_id = r_live.id
+      LEFT JOIN rooms r_stale ON b.room_id = r_stale.id
       LEFT JOIN customers c ON b.customer_id = c.id
       LEFT JOIN invoices i ON b.id = i.billing_id
       ${whereClause}
       GROUP BY 
         b.id,
-        b.booking_id,   -- ✅ FIXED: Group by billings.booking_id
+        b.booking_id,
         b.customer_id,
         b.room_id,
+        COALESCE(r_live.room_number, r_stale.room_number),
         b.total_amount,
         b.advance_paid,
         b.created_at,

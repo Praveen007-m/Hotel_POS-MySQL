@@ -194,14 +194,33 @@ export default function BookingForm({
   // ── Initial form state ──────────────────────────────────────
   const [form, setForm] = useState(() => {
     if (initialData && initialData.check_in) {
+      // Parse add_ons if it's a JSON string from the DB
+      let parsedAddOns = [];
+      try {
+        parsedAddOns = typeof initialData.add_ons === "string" 
+          ? JSON.parse(initialData.add_ons) 
+          : (initialData.add_ons || []);
+      } catch (e) {
+        parsedAddOns = [];
+      }
+
+      // If add_ons is an array of objects [{description, amount}], convert to array of names for the toggle logic
+      const addonNames = Array.isArray(parsedAddOns) 
+        ? parsedAddOns.map(a => typeof a === 'string' ? a : (a.description || a.name))
+        : [];
+
       return {
         ...initialData,
+        customer_id: initialData.customer_id !== undefined ? Number(initialData.customer_id) : "",
+        room_id: initialData.room_id !== undefined ? Number(initialData.room_id) : "",
         // DB format → input format (pure string, no timezone shift)
         check_in: dbToInputFormat(initialData.check_in),
         check_out: dbToInputFormat(initialData.check_out),
         price: Number(initialData.price) || "",
         advance_paid: Number(initialData.advance_paid) || "",
+        discount: Number(initialData.discount) || 0,
         people_count: Number(initialData.people_count) || 1,
+        _addonNames: addonNames // helper for useEffect
       };
     }
 
@@ -214,6 +233,7 @@ export default function BookingForm({
       status: "Confirmed",
       people_count: 1,
       advance_paid: "",
+      discount: 0,
       add_ons: {},
     };
   });
@@ -291,15 +311,25 @@ export default function BookingForm({
           addonsObj[a.name] = false;
         });
 
-        setForm((prev) => ({
-          ...prev,
-          add_ons: initialData?.add_ons
-            ? resAddons.data.reduce((acc, a) => {
-                acc[a.name] = initialData.add_ons.includes(a.name);
-                return acc;
-              }, {})
-            : addonsObj,
-        }));
+        setForm((prev) => {
+          const names = prev._addonNames || [];
+          return {
+            ...prev,
+            customer_id:
+              initialData && initialData.customer_id !== undefined
+                ? Number(initialData.customer_id)
+                : prev.customer_id,
+            room_id:
+              initialData && initialData.room_id !== undefined
+                ? Number(initialData.room_id)
+                : prev.room_id,
+            add_ons: resAddons.data.reduce((acc, a) => {
+              // Mark as true if this addon name was in the booking's list
+              acc[a.name] = names.includes(a.name);
+              return acc;
+            }, {})
+          };
+        });
       } catch (error) {
         console.error(error);
         toast.error("Failed to load required data.");
@@ -458,12 +488,17 @@ export default function BookingForm({
       price: Number(form.price),
       advance_paid: Number(form.advance_paid) || 0,
       people_count: Number(form.people_count) || 1,
+      discount: Number(form.discount) || 0,
       add_ons: selectedAddOns,
     };
 
     console.log("📦 Submitting booking payload:", payload);
     onSubmit(payload);
   };
+
+  // ── Debug Logs (Temporary) ──────────────────────────────────
+  console.log("FORM:", form);
+  console.log("INITIAL:", initialData);
 
   // ─────────────────────────────────────────────────────────────
   // RENDER
@@ -495,7 +530,7 @@ export default function BookingForm({
           <div className="flex gap-2">
             <select
               name="customer_id"
-              value={form.customer_id}
+              value={form.customer_id || ""}
               onChange={handleChange}
               className="form-select flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
               style={{
@@ -507,8 +542,8 @@ export default function BookingForm({
             >
               <option value="">CHOOSE CUSTOMER</option>
               {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} — {c.contact}
+                <option key={c.id} value={Number(c.id)}>
+                  {c.name || "Unknown Customer"} — {c.contact || "N/A"}
                 </option>
               ))}
             </select>
@@ -561,7 +596,7 @@ export default function BookingForm({
           </label>
           <select
             name="room_id"
-            value={form.room_id}
+            value={form.room_id || ""}
             onChange={handleRoomChange}
             className="form-select w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
             style={{
@@ -573,8 +608,8 @@ export default function BookingForm({
           >
             <option value="">CHOOSE ROOM</option>
             {rooms.map((r) => (
-              <option key={r.id} value={r.id}>
-                Room {r.room_number} — {r.category}
+              <option key={r.id} value={Number(r.id)}>
+                Room {r.room_number || "N/A"} — {r.category || "General"}
               </option>
             ))}
           </select>
@@ -609,6 +644,28 @@ export default function BookingForm({
               setForm((prev) => ({
                 ...prev,
                 advance_paid:
+                  e.target.value === "" ? "" : Number(e.target.value),
+              }))
+            }
+            className="form-input w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            placeholder="0"
+          />
+        </div>
+
+        {/* Discount */}
+        <div>
+          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+            Discount
+          </label>
+          <input
+            type="number"
+            min={0}
+            name="discount"
+            value={form.discount ?? ""}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                discount:
                   e.target.value === "" ? "" : Number(e.target.value),
               }))
             }

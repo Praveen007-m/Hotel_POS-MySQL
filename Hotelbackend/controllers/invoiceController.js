@@ -76,6 +76,7 @@ exports.generateInvoicePDF = async (req, res) => {
 
     const invoiceService = require('../services/invoiceService');
     const invoiceData = await invoiceService.getInvoiceData(billing_id);
+    const selectedBill = invoiceData;
 
     // PDF generation (keeping original formatting)
     const doc = new PDFDocument({
@@ -212,7 +213,7 @@ exports.generateInvoicePDF = async (req, res) => {
       );
 
     doc.text(
-      `Category: ${selectedBill.room_category || "N/A"}`,
+      `Category: ${selectedBill.category || "N/A"}`,
       pageWidth - 200,
       roomY + 33,
     );

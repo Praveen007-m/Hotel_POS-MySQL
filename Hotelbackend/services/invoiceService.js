@@ -11,11 +11,14 @@ class InvoiceService {
   async getInvoiceData(billingId) {
     const billing = await dbService.get(
       `SELECT b.*, c.name as customer_name, c.address, c.contact,
-              r.room_number, r.category,
+              COALESCE(r_live.room_number, r_stale.room_number) as room_number,
+              COALESCE(r_live.category, r_stale.category) as category,
               u.name as billed_by_name, u.role as billed_by_role
        FROM billings b
-       JOIN customers c ON b.customer_id = c.id
-       LEFT JOIN rooms r ON b.room_id = r.id
+       LEFT JOIN bookings bk ON b.booking_id = bk.booking_id
+       LEFT JOIN rooms r_live ON bk.room_id = r_live.id
+       LEFT JOIN rooms r_stale ON b.room_id = r_stale.id
+       LEFT JOIN customers c ON b.customer_id = c.id
        LEFT JOIN users u ON b.billed_by_id = u.id
        WHERE b.id = ?`,
       [billingId]

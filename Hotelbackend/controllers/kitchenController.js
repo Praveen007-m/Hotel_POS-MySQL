@@ -89,7 +89,7 @@ exports.getKitchenOrders = (req, res) => {
       ko.created_at,
 
       r.room_number,
-      r.category AS room_category,
+      r.category,
       r.price_per_night,
 
       ko.booking_id,

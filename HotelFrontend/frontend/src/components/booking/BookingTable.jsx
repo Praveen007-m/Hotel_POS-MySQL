@@ -288,7 +288,7 @@ export default function BookingTable({
                             </span>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                {booking.room_category}
+                                {booking.category}
                               </span>
                               <span className="text-[10px] font-bold text-blue-600 whitespace-nowrap">
                                 Adv: ₹{booking.advance_paid}

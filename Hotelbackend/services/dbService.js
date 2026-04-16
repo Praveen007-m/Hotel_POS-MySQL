@@ -112,7 +112,7 @@ class DbService {
       addonsTotal,
       kitchenTotal,
       grandTotal:
-        Number(booking.price || 0) + addonsTotal + kitchenTotal,
+        Number(booking.price || 0) * (booking.stayDays || 1) + addonsTotal + kitchenTotal - Number(booking.discount || 0),
     };
   }
 

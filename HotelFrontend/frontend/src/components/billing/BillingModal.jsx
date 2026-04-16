@@ -336,8 +336,8 @@ const BillingModal = ({
             <p><b>Customer:</b> {selectedBill.customer_name}</p>
             <p className="text-xs text-gray-500">Customer ID: {selectedBill.customer_id}</p>
             {gstNumber && <p><b>GST Number:</b> {gstNumber}</p>}
-            <p><b>Room ID:</b> {selectedBill.room_id}</p>
-            <p><b>Room Category:</b> {selectedBill.room_category || "N/A"}</p>
+            <p><b>Room:</b> {selectedBill.room_number || "N/A"}</p>
+            <p><b>Room Category:</b> {selectedBill.category || "N/A"}</p>
             <p><b>Check-in:</b> {formatIST(selectedBill.check_in)}</p>
             <p><b>Check-out:</b> {formatIST(selectedBill.check_out)}</p>
 
