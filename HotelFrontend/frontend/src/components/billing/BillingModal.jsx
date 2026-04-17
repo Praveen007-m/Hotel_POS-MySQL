@@ -411,7 +411,7 @@ const BillingModal = ({
                   form,
                   gstIncluded,
                   gstNumber,
-                  guestDiscount,
+                  // guestDiscount,
                   gstRates: {
                     room: safeGst.room,
                     kitchen: safeGst.kitchen,

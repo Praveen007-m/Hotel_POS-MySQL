@@ -24,6 +24,13 @@ export default function BookingList({
 
   const normalize = (str) => String(str || "").toLowerCase().replace(/\s+/g, "_");
 
+  const getLocalDateTimeInput = () => {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   const parseAddOns = (addOns) => {
     if (!addOns) return [];
     if (Array.isArray(addOns)) {
@@ -181,7 +188,7 @@ export default function BookingList({
     setAddonTotal(nextAddonTotal);
     setCheckoutBooking(booking);
     setCheckoutData({
-      check_out: new Date().toISOString().slice(0, 16),
+      check_out: getLocalDateTimeInput(),
       roomPrice,
       price: roomTotal,
       stayDays,

@@ -50,11 +50,21 @@ const daysBetween = (startDatetimeStr, endDatetimeStr) => {
 
 /**
  * Return the current local datetime as "YYYY-MM-DD HH:mm:ss".
- * Used for checkout timestamp — replaces NOW() when we need the value in JS,
- * but we just let MySQL handle NOW() in the UPDATE query, so this is unused.
- * Kept here as a utility if ever needed.
  */
-// const localNowMySQL = () => { ... };  // not needed — see UPDATE below
+// MODIFIED: Generate checkout timestamps in Node local time instead of MySQL server time.
+const getLocalDateTime = () => {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+
+  return (
+    d.getFullYear() + "-" +
+    pad(d.getMonth() + 1) + "-" +
+    pad(d.getDate()) + " " +
+    pad(d.getHours()) + ":" +
+    pad(d.getMinutes()) + ":" +
+    pad(d.getSeconds())
+  );
+};
 
 // ─────────────────────────────────────────────────────────────
 // SERVICE
@@ -160,6 +170,11 @@ class CheckoutService {
         );
       }
 
+      // MODIFIED: Single checkout timestamp used for both bookings and billings.
+      const finalCheckoutTime = checkoutData.check_out
+        ? checkoutData.check_out
+        : getLocalDateTime();
+
       const billingId = await dbService.transaction(async () => {
         for (const addon of newAddOns) {
           await dbService.run(
@@ -168,14 +183,11 @@ class CheckoutService {
           );
         }
 
-        // ── Checkout timestamp: use provided checkout date or NOW() ────────────
-        const finalCheckoutDate = checkoutData.check_out ? checkoutData.check_out : 'NOW()';
-        const checkoutSql = checkoutData.check_out 
-          ? `UPDATE bookings SET status = 'Checked-out', check_out = ? WHERE id = ?`
-          : `UPDATE bookings SET status = 'Checked-out', check_out = NOW() WHERE id = ?`;
-        const checkoutParams = checkoutData.check_out ? [checkoutData.check_out, bookingId] : [bookingId];
-        
-        await dbService.run(checkoutSql, checkoutParams);
+        // MODIFIED: Always bind the final checkout time; never call MySQL time functions.
+        await dbService.run(
+          `UPDATE bookings SET status = 'Checked-out', check_out = ? WHERE id = ?`,
+          [finalCheckoutTime, bookingId]
+        );
 
         await dbService.run(
           `UPDATE rooms SET status = 'Available' WHERE id = ?`,
@@ -188,40 +200,29 @@ class CheckoutService {
         // as-is; MySQL will store it back without reinterpretation.
         const billingSql = `INSERT INTO billings (
             booking_id, idempotency_key, customer_id, room_id,
-            check_in, check_out, advance_paid, discount, total_amount, final_amount,
+            check_in, check_out, advance_paid, discount, total_amount,
             gst_number, billed_by_id, billed_by_name, billed_by_role
-          ) VALUES (?, ?, ?, ?, ?, ${checkoutData.check_out ? '?' : 'NOW()'}, ?, ?, ?, ?, ?, ?, ?, ?)`;
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const billingParams = [
           booking.booking_id,
           key,
           booking.customer_id,
           booking.room_id,
-          booking.check_in
+          booking.check_in,
+          finalCheckoutTime
         ];
-        if (checkoutData.check_out) billingParams.push(checkoutData.check_out);
         billingParams.push(
           advancePaid,
           discountToApply,
           expectedTotal,
-          balanceAmount,
-          gstNumber || null,
-          staffId,
-          staffName,
-          staffRole
+          gst_number || null,
+          user.id,
+          user.name,
+          user.role
         );
 
         const billingResult = await dbService.run(billingSql, billingParams);
-            advancePaid,
-            discountToApply,
-            grossTotal,
-            finalAmount,
-            gst_number || null,
-            user.id,
-            user.name,
-            user.role,
-          ]
-        );
 
         await this._createLineItems(billingResult.lastID, booking, stayDays, discountToApply);
 
