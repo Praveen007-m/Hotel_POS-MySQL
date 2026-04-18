@@ -98,13 +98,12 @@ const BillingModal = ({
   const safeGst = {
     room: roomGstRate,
     kitchen: DEFAULT_GST_RATES.kitchen,
-    addon: DEFAULT_GST_RATES.addon,
   };
 
   const subtotal = roomCharges + kitchenCharges + addOnsTotal;
   const roomGst = gstIncluded ? roomCharges * safeGst.room : 0;
   const kitchenGst = gstIncluded ? kitchenCharges * safeGst.kitchen : 0;
-  const addOnsGst = gstIncluded ? addOnsTotal * safeGst.addon : 0;
+  const addOnsGst = 0; // ✅ NO GST ON ADD-ONS
   const totalGst = roomGst + kitchenGst + addOnsGst;
   const subtotalWithGst = subtotal + totalGst;
   
@@ -369,7 +368,6 @@ const BillingModal = ({
               <>
                 <p><b>Room GST ({roomGstPercent}%):</b> Rs{roomGst.toFixed(2)}</p>
                 <p><b>Kitchen GST ({kitchenGstPercent}%):</b> Rs{kitchenGst.toFixed(2)}</p>
-                <p><b>Add-ons GST ({addonGstPercent}%):</b> Rs{addOnsGst.toFixed(2)}</p>
               </>
             )}
 
@@ -420,7 +418,6 @@ const BillingModal = ({
                   gstAmounts: {
                     room: roomGst,
                     kitchen: kitchenGst,
-                    addon: addOnsGst,
                   },
                   subtotal,
                   subtotalWithGst,
