@@ -24,12 +24,12 @@ const requireAuth = async (req, res, next) => {
     let name = null;
 
     // 🔥 FETCH NAME BASED ON ROLE
-    if (decoded.role === "admin") {
+    if (decoded.role === "admin" || decoded.role === "kitchen") {
       const [rows] = await db.query(
         "SELECT name FROM users WHERE id = ?",
         [decoded.id]
       );
-      name = rows[0]?.name || "Admin User";
+      name = rows[0]?.name || (decoded.role === "kitchen" ? "Kitchen" : "Admin User");
     }
 
     if (decoded.role === "staff") {

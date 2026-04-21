@@ -7,15 +7,28 @@ export const useLogin = () => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const login = async (email, password) => {
+  const login = async (email, password, options = {}) => {
+    const {
+      endpoint = "/auth/login",
+      requiredRole = null,
+      roleError = "This account cannot sign in here",
+    } = options;
+
     setError(null);
     setLoading(true);
 
     try {
-      const res = await auth.post("/auth/login", {
-        email,
+      const res = await auth.post(endpoint, {
+        email: String(email || "").trim().toLowerCase(),
         password,
       });
+
+      if (requiredRole && res.data.user?.role !== requiredRole) {
+        localStorage.removeItem("token");
+        setUser(null);
+        setError(roleError);
+        return null;
+      }
 
       // Save token
       localStorage.setItem("token", res.data.token);

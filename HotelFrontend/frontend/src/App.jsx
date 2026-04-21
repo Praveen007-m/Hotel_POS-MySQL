@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -28,9 +28,14 @@ import RoomCalendar from "./pages/RoomCalendar";
 ========================== */
 const AppLayout = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  if (!user) return <Navigate to="/login" />;
+  if (!user) return <Navigate to="/login" replace />;
+
+  if (user.role === "kitchen" && location.pathname !== "/kitchen") {
+    return <Navigate to="/kitchen" replace />;
+  }
 
   return (
     <div className="flex min-h-screen bg-royal-50 text-royal-900 overflow-x-hidden">
@@ -84,6 +89,7 @@ export default function App() {
         <Routes>
           {/* PUBLIC */}
           <Route path="/login" element={<Login />} />
+          <Route path="/kitchen-login" element={<Navigate to="/login" replace />} />
 
           {/* PROTECTED */}
           <Route path="/*" element={<AppLayout />} />

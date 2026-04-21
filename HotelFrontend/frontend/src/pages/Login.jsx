@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLogin } from "../hooks/useLogin";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function Login() {
   const { login, error, loading } = useLogin();
@@ -14,8 +14,9 @@ export default function Login() {
 
   const validate = () => {
     const e = {};
-    if (!email) e.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(email)) e.email = "Invalid email format";
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) e.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(normalizedEmail)) e.email = "Invalid email format";
     if (!password) e.password = "Password is required";
     else if (password.length < 6) e.password = "Minimum 6 characters";
     setErrors(e);
@@ -138,7 +139,11 @@ export default function Login() {
           </div>
 
           {/* CARD */}
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-8 space-y-4">
+          <form
+            onSubmit={submit}
+            noValidate
+            className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-8 space-y-4"
+          >
 
             {/* EMAIL INPUT */}
             <div className="">
@@ -214,7 +219,6 @@ export default function Login() {
             {/* SIGN IN BUTTON */}
             <button
               type="submit"
-              onClick={submit}
               disabled={loading}
               className="w-full py-3 px-4 rounded-xl font-semibold text-white uppercase text-xs tracking-wider bg-gradient-to-r from-[#C53FFF] via-[#2563EB] to-[#2563EB] hover:shadow-lg hover:shadow-purple-500/30 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:shadow-none"
             >
@@ -228,9 +232,7 @@ export default function Login() {
               )}
             </button>
 
-            {/* SECURITY NOTE */}
-            
-          </div>
+          </form>
 
           {/* FOOTER */}
           <p className="text-center text-xs text-gray-600 mt-6 font-light">

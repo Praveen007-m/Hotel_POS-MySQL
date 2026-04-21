@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { LogOut, ChevronDown, Key, Menu } from "lucide-react";
+import { LogOut, ChevronDown, Menu } from "lucide-react";
 import auth from "../../auth/axiosInstance";
 import { useAuth } from "../../hooks/useAuth";
 

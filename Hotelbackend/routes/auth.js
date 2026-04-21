@@ -2,59 +2,79 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("../db/database");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
+
+const buildLoginHandler = ({ requiredRole = null, roleMessage = "Access denied" } = {}) => {
+  return async (req, res) => {
+    try {
+      const email = String(req.body.email || "").trim().toLowerCase();
+      const { password } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ message: "Missing fields" });
+      }
+
+      if (!process.env.JWT_SECRET) {
+        console.error("JWT_SECRET missing");
+        return res.status(500).json({ message: "Server config error" });
+      }
+
+      const [users] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
+      const user = users[0];
+
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      if (!user.password) {
+        return res.status(500).json({ message: "Corrupted user data" });
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      if (requiredRole && user.role !== requiredRole) {
+        return res.status(403).json({ message: roleMessage });
+      }
+
+      const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
+        expiresIn: "24h",
+      });
+
+      const { password: _password, ...safeUser } = user;
+      res.json({ token, user: safeUser });
+    } catch (err) {
+      console.error("LOGIN ERROR:", err);
+      res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+  };
+};
 
 /* ======================
    LOGIN (PUBLIC)
 ====================== */
-router.post("/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
+router.post("/login", buildLoginHandler());
 
-    if (!email || !password) {
-      return res.status(400).json({ message: "Missing fields" });
-    }
-
-    if (!process.env.JWT_SECRET) {
-      console.error("❌ JWT_SECRET missing");
-      return res.status(500).json({ message: "Server config error" });
-    }
-
-    const [users] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
-    const user = users[0];
-
-    if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    if (!user.password) {
-      return res.status(500).json({ message: "Corrupted user data" });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-      expiresIn: "24h",
-    });
-
-    res.json({ token, user });
-  } catch (err) {
-    console.error("🔥 LOGIN ERROR:", err);
-    res.status(500).json({ message: "Internal server error", error: err.message });
-  }
-});
+/* ======================
+   KITCHEN LOGIN (PUBLIC)
+====================== */
+router.post(
+  "/kitchen-login",
+  buildLoginHandler({
+    requiredRole: "kitchen",
+    roleMessage: "Kitchen login accepts kitchen accounts only",
+  })
+);
 
 /* ======================
    KITCHEN REGISTRATION
    (ADMIN ONLY)
 ====================== */
-router.post("/register-kitchen", async (req, res) => {
+router.post("/register-kitchen", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
@@ -73,7 +93,7 @@ router.post("/register-kitchen", async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     const [result] = await db.query(
-      `INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'kitchen')`,
+      "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'kitchen')",
       [name, email, hash]
     );
 

@@ -127,6 +127,34 @@ async function seedAdminUser() {
   }
 }
 
+async function seedKitchenUser() {
+  const email = process.env.KITCHEN_EMAIL || "kitchen@hotel.com";
+  const password = process.env.KITCHEN_PASSWORD || "kitchen123";
+  const name = process.env.KITCHEN_NAME || "Kitchen";
+
+  try {
+    const hashed = await bcrypt.hash(password, 10);
+    const [rows] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
+
+    if (Array.isArray(rows) && rows.length > 0) {
+      await db.query(
+        "UPDATE users SET name = ?, password = ?, role = ?, staff_id = NULL WHERE email = ?",
+        [name, hashed, "kitchen", email]
+      );
+      console.log("Kitchen user credentials updated:", email);
+      return;
+    }
+
+    await db.query(
+      "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
+      [name, email, hashed, "kitchen"]
+    );
+    console.log("Kitchen user seeded:", email);
+  } catch (err) {
+    console.error("Seed kitchen error:", err.message || err);
+  }
+}
+
 // ================= INIT DATABASE =================
 async function initDatabase() {
   try {
@@ -174,6 +202,7 @@ async function initDatabase() {
 
     // ── Step 3: Seed default admin user ───────────────────────────────────
     await seedAdminUser();
+    await seedKitchenUser();
 
     console.log("✅ Database initialized successfully");
     isDbReady = true;

@@ -20,6 +20,7 @@ const migrations = [
 
   // ── Users: staff_id FK column ─────────────────────────────────────────────
   `ALTER TABLE users ADD COLUMN staff_id INT`,
+  `ALTER TABLE users MODIFY COLUMN role ENUM('admin','staff','kitchen') NOT NULL`,
 
   // ── Billings: is_downloaded flag ──────────────────────────────────────────
   `ALTER TABLE billings ADD COLUMN is_downloaded TINYINT(1) DEFAULT 0`,
