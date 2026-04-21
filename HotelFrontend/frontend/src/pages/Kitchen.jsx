@@ -60,19 +60,19 @@ export default function Kitchen() {
 
   const content = (
     <>
-      <h1 className="text-2xl md:text-3xl font-bold text-[#0A1A2F] mb-8">
+      <h1 className="mb-6 text-xl font-bold text-[#0A1A2F] sm:text-2xl md:mb-8 md:text-3xl">
         Kitchen / Restaurant Management
       </h1>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-4 mb-8">
+      <div className="mb-6 grid grid-cols-3 gap-3 md:mb-8 md:flex md:flex-wrap md:gap-4">
         {["orders", "menu", "categories"].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-5 py-2 rounded-xl font-semibold transition-all ${activeTab === tab
+            className={`min-h-11 rounded-xl px-3 py-2 text-sm font-semibold transition-all sm:text-base ${activeTab === tab
               ? "bg-[#0A1B4D] text-white shadow-lg"
-              : "bg-white text-[#0A1B4D] border border-gray-200 hover:shadow-sm"
+              : "border border-gray-200 bg-white text-[#0A1B4D] hover:shadow-sm"
               }`}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}

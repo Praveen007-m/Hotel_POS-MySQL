@@ -75,7 +75,7 @@ export default function CustomerForm({ onSave, onCancel, existing }) {
       </div>
 
       {/* Row 1: Name & Contact */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
             Full Name <span className="text-red-500">*</span>
@@ -105,7 +105,7 @@ export default function CustomerForm({ onSave, onCancel, existing }) {
       </div>
 
       {/* Row 2: Email & DOB */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
             Email <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
@@ -133,7 +133,7 @@ export default function CustomerForm({ onSave, onCancel, existing }) {
       </div>
 
       {/* Row 3: ID Type & ID Number */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
             ID Proof Type <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
@@ -168,7 +168,7 @@ export default function CustomerForm({ onSave, onCancel, existing }) {
       </div>
 
       {/* Row 4: Address & Vehicle */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
             Address <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
@@ -260,17 +260,17 @@ export default function CustomerForm({ onSave, onCancel, existing }) {
       </div>
 
       {/* Actions */}
-      <div className="flex justify-end gap-2 pt-4 border-t border-gray-200">
+      <div className="flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors duration-200 text-xs font-semibold uppercase tracking-wide"
+          className="w-full rounded-md border border-gray-300 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700 transition-colors duration-200 hover:bg-gray-50 sm:w-auto"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-4 py-1.5 rounded-md bg-gray-900 text-white hover:bg-gray-800 transition-colors duration-200 text-xs font-semibold uppercase tracking-wide"
+          className="w-full rounded-md bg-gray-900 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition-colors duration-200 hover:bg-gray-800 sm:w-auto"
         >
           Save Customer
         </button>

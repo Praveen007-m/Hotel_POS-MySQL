@@ -10,6 +10,7 @@ export default function CategoryList() {
   const [categories, setCategories] = useState([]);
   const [newCategory, setNewCategory] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
   const [deletingIds, setDeletingIds] = useState(new Set());
   const [error, setError] = useState(null);
   const { user } = useAuth();
@@ -39,7 +40,8 @@ export default function CategoryList() {
   /* ================= OPTIMISTIC ADD ================= */
   const addCategory = async () => {
     const name = newCategory.trim();
-    if (!name) {
+    if (!name || isAdding) {
+      if (isAdding) return;
       toast.warning("Please enter a category name");
       return;
     }
@@ -54,6 +56,7 @@ export default function CategoryList() {
     // optimistic UI update
     setCategories((prev) => [...prev, tempCategory]);
     setNewCategory("");
+    setIsAdding(true);
 
     try {
       const res = await axios.post(
@@ -78,6 +81,8 @@ export default function CategoryList() {
       );
 
       toast.error(err.response?.data?.message || "Failed to add category");
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -120,23 +125,22 @@ export default function CategoryList() {
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter") {
-      addCategory();
-    }
+  const handleAddSubmit = (e) => {
+    e.preventDefault();
+    addCategory();
   };
 
   /* ================= UI ================= */
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
-          <Tags className="w-6 h-6 text-white" />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="w-fit rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 p-3">
+          <Tags className="h-6 w-6 text-white" />
         </div>
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Menu Categories</h2>
-          <p className="text-sm text-gray-500 mt-1">Organize your menu items by category</p>
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold text-gray-900 sm:text-3xl">Menu Categories</h2>
+          <p className="mt-1 text-sm text-gray-500 sm:text-base">Organize your menu items by category</p>
         </div>
       </div>
 
@@ -158,30 +162,35 @@ export default function CategoryList() {
 
       {/* Add Category Section */}
       {user?.role === "admin" && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100">
-          <label className="block text-sm font-semibold text-gray-700 mb-3">
+        <form
+          onSubmit={handleAddSubmit}
+          className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 sm:p-6"
+        >
+          <label className="mb-3 block text-sm font-semibold text-gray-700 sm:text-base">
             Add New Category
           </label>
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <input
               type="text"
               placeholder="Enter category name (e.g., Appetizers, Main Courses)"
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
-              onKeyPress={handleKeyPress}
-              className="flex-1 px-4 py-3 border border-blue-200 rounded-xl bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+              className="min-w-0 w-full flex-1 rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder-gray-400 transition-all duration-200 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 sm:text-base"
             />
             <button
-              onClick={addCategory}
-              disabled={!newCategory.trim() || loading}
-              className="group relative overflow-hidden px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 flex items-center gap-2"
+              type="submit"
+              disabled={!newCategory.trim() || isAdding}
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-lg transition-all duration-300 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-6"
             >
-              <Plus className="w-5 h-5" />
-              Add
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-700 to-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              {isAdding ? (
+                <Loader className="h-5 w-5 animate-spin" />
+              ) : (
+                <Plus className="h-5 w-5" />
+              )}
+              {isAdding ? "Adding..." : "Add Category"}
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       {/* Loading State */}
@@ -203,8 +212,8 @@ export default function CategoryList() {
       {/* Category List */}
       {!loading && categories.length > 0 && (
         <div>
-          <div className="flex items-center gap-2 mb-4">
-            <p className="text-sm font-semibold text-gray-700">
+          <div className="mb-4 flex items-center gap-2">
+            <p className="text-sm font-semibold text-gray-700 sm:text-base">
               {categories.filter(c => !c.optimistic).length} {categories.filter(c => !c.optimistic).length === 1 ? 'Category' : 'Categories'}
             </p>
             <div className="h-1 flex-1 bg-gradient-to-r from-blue-300 to-transparent rounded-full"></div>
@@ -225,18 +234,18 @@ export default function CategoryList() {
                 {/* Background gradient effect */}
                 <div className="absolute -right-6 -top-6 w-24 h-24 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full opacity-0 group-hover:opacity-20 transition-all duration-500"></div>
 
-                <div className="relative p-4 flex items-center justify-between h-full">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                      <Tags className="w-5 h-5 text-white" />
+                <div className="relative flex h-full items-center justify-between gap-3 p-4">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600">
+                      <Tags className="h-5 w-5 text-white" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors duration-300">
+                      <p className="break-words text-base font-semibold leading-tight text-gray-900 transition-colors duration-300 group-hover:text-blue-600 sm:text-lg">
                         {c.name}
                       </p>
                       {c.optimistic && (
-                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                          <Loader className="w-3 h-3 animate-spin" />
+                        <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
+                          <Loader className="h-3 w-3 animate-spin" />
                           Adding...
                         </p>
                       )}
@@ -247,10 +256,10 @@ export default function CategoryList() {
                     <button
                       onClick={() => removeCategory(c.id)}
                       disabled={c.optimistic || deletingIds.has(c.id)}
-                      className="ml-2 flex-shrink-0 p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed group/delete"
+                      className="ml-2 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 transition-all duration-200 hover:bg-red-100 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 group/delete"
                       title="Delete category"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="h-5 w-5" />
                     </button>
                   )}
                 </div>

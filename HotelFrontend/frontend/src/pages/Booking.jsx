@@ -7,6 +7,7 @@ import auth from "../auth/axiosInstance";
 import SearchInput from "../components/common/SearchInput";
 import StatusDropdown from "../components/booking/DropDown";
 import { toast } from 'react-toastify';
+import { X } from "lucide-react";
 
 export default function Booking() {
   const location = useLocation();
@@ -179,8 +180,19 @@ export default function Booking() {
       />
 
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl shadow-xl relative">
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/40 p-3 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="relative h-[calc(100dvh-1.5rem)] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:h-auto sm:max-h-[90vh] sm:rounded-xl sm:p-6">
+            <button
+              type="button"
+              onClick={() => {
+                setModalOpen(false);
+                setEditingBooking(null);
+              }}
+              className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+              aria-label="Close booking form"
+            >
+              <X size={18} />
+            </button>
             <BookingForm
               initialData={editingBooking}
               onSubmit={handleSubmit}

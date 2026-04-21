@@ -504,12 +504,12 @@ export default function BookingForm({
   // RENDER
   // ─────────────────────────────────────────────────────────────
   return (
-    <div>
-      <h2 className="text-2xl font-bold text-[#0A1B4D] mb-6">
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold text-[#0A1B4D] sm:text-2xl">
         {isEditing ? "EDIT BOOKING" : "CREATE BOOKING"}
       </h2>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {/* Booking ID */}
         <div>
           <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
@@ -523,21 +523,21 @@ export default function BookingForm({
         </div>
 
         {/* Customer */}
-        <div className="col-span-2">
+        <div className="sm:col-span-2 xl:col-span-2">
           <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
             Customer
           </label>
-          <div className="flex gap-2">
+          <div className="flex items-stretch gap-2">
             <select
               name="customer_id"
               value={form.customer_id || ""}
               onChange={handleChange}
-              className="form-select flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+              className="form-select min-h-11 flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A1B4D' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                backgroundPosition: "right 8px center",
+                backgroundPosition: "right 12px center",
                 backgroundSize: "16px",
-                paddingRight: "28px",
+                paddingRight: "40px",
               }}
             >
               <option value="">CHOOSE CUSTOMER</option>
@@ -550,7 +550,7 @@ export default function BookingForm({
             <button
               type="button"
               onClick={() => setShowCustomerModal(true)}
-              className="p-2 bg-[#0A1B4D] text-white rounded hover:bg-[#081341] transition-colors shadow-sm"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0A1B4D] text-white shadow-sm transition-colors hover:bg-[#081341]"
               title="Add New Customer"
             >
               <PlusCircle size={20} />
@@ -575,7 +575,7 @@ export default function BookingForm({
                 people_count: val === "" ? "" : Number(val),
               }));
             }}
-            className="form-input w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
           />
           {selectedRoomCapacity && (
             <p className="text-xs text-gray-500 mt-1">
@@ -590,7 +590,7 @@ export default function BookingForm({
         </div>
 
         {/* Room */}
-        <div className="col-span-2">
+        <div className="sm:col-span-2 xl:col-span-2">
           <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
             Room
           </label>
@@ -598,12 +598,12 @@ export default function BookingForm({
             name="room_id"
             value={form.room_id || ""}
             onChange={handleRoomChange}
-            className="form-select w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-select min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A1B4D' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-              backgroundPosition: "right 8px center",
+              backgroundPosition: "right 12px center",
               backgroundSize: "16px",
-              paddingRight: "28px",
+              paddingRight: "40px",
             }}
           >
             <option value="">CHOOSE ROOM</option>
@@ -625,7 +625,7 @@ export default function BookingForm({
           <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
             Room Price
           </label>
-          <div className="w-full px-3 py-2 border border-gray-300 rounded bg-gray-50 text-sm font-medium text-gray-700">
+          <div className="flex min-h-11 w-full items-center px-3 py-2 border border-gray-300 rounded-xl bg-gray-50 text-sm font-medium text-gray-700">
             {form.price ? `₹${form.price}` : "—"}
           </div>
         </div>
@@ -647,7 +647,7 @@ export default function BookingForm({
                   e.target.value === "" ? "" : Number(e.target.value),
               }))
             }
-            className="form-input w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
             placeholder="0"
           />
         </div>
@@ -669,7 +669,7 @@ export default function BookingForm({
                   e.target.value === "" ? "" : Number(e.target.value),
               }))
             }
-            className="form-input w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
             placeholder="0"
           />
         </div>
@@ -684,7 +684,7 @@ export default function BookingForm({
             name="check_in"
             value={form.check_in || ""}
             onChange={handleChange}
-            className="form-input w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
           />
         </div>
 
@@ -698,7 +698,7 @@ export default function BookingForm({
             name="check_out"
             value={form.check_out || ""}
             onChange={handleChange}
-            className="form-input w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
           />
         </div>
 
@@ -711,12 +711,12 @@ export default function BookingForm({
             name="status"
             value={form.status}
             onChange={handleChange}
-            className="form-select w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-select min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
             style={{
               backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A1B4D' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-              backgroundPosition: "right 8px center",
+              backgroundPosition: "right 12px center",
               backgroundSize: "16px",
-              paddingRight: "28px",
+              paddingRight: "40px",
             }}
           >
             <option value="Checked-in">CHECKED-IN</option>
@@ -728,17 +728,17 @@ export default function BookingForm({
       </div>
 
       {/* Add-ons */}
-      <div className="mt-6">
+      <div className="mt-6 border-t border-gray-100 pt-4">
         <p className="text-sm font-medium text-gray-700 mb-3 uppercase">
           Add-ons
         </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {availableAddons.map((addon) => (
             <button
               key={addon.id}
               type="button"
               onClick={() => toggleAddon(addon.name)}
-              className={`addon-btn px-3 py-1.5 rounded border transition-all duration-200 ease-out text-sm font-medium ${
+              className={`addon-btn inline-flex w-full items-center justify-start rounded-xl border px-4 py-3 text-left transition-all duration-200 ease-out text-sm font-medium ${
                 form.add_ons[addon.name]
                   ? "bg-[#0A1B4D] text-white border-[#0A1B4D] hover:bg-[#081341] hover:border-[#081341]"
                   : "bg-white border-gray-300 text-gray-700 hover:border-[#0A1B4D]"
@@ -751,16 +751,16 @@ export default function BookingForm({
       </div>
 
       {/* Action buttons */}
-      <div className="flex justify-end gap-3 mt-8">
+      <div className="mt-8 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
         <button
           onClick={onCancel}
-          className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors duration-200 ease-out text-sm font-medium"
+          className="w-full rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors duration-200 ease-out hover:bg-gray-100 sm:w-auto"
         >
           CANCEL
         </button>
         <button
           onClick={handleSubmit}
-          className="px-4 py-2 bg-[#0A1B4D] text-white rounded hover:bg-[#081341] transition-colors duration-200 ease-out text-sm font-medium"
+          className="w-full rounded-xl bg-[#0A1B4D] px-4 py-2.5 text-sm font-medium text-white transition-colors duration-200 ease-out hover:bg-[#081341] sm:w-auto"
         >
           SAVE BOOKING
         </button>
@@ -768,11 +768,12 @@ export default function BookingForm({
 
       {/* Customer modal */}
       {showCustomerModal && (
-        <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 relative">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/40 p-3 sm:items-center sm:p-4">
+          <div className="relative w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:max-h-[90vh] sm:p-6">
             <button
               onClick={() => setShowCustomerModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10"
+              className="absolute right-3 top-3 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close customer form"
             >
               ✕
             </button>
