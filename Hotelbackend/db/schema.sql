@@ -12,6 +12,32 @@ CREATE TABLE IF NOT EXISTS rooms (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS room_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO room_categories (name)
+SELECT defaults.name
+FROM (
+    SELECT 'A frame wooden villa' AS name
+    UNION ALL
+    SELECT 'Premium room'
+    UNION ALL
+    SELECT 'Superior room'
+) AS defaults
+WHERE NOT EXISTS (
+    SELECT 1 FROM room_categories LIMIT 1
+);
+
+INSERT INTO room_categories (name)
+SELECT DISTINCT r.category
+FROM rooms r
+WHERE COALESCE(TRIM(r.category), '') <> ''
+ON DUPLICATE KEY UPDATE name = VALUES(name);
+
 -- ================== CUSTOMERS ==================
 CREATE TABLE IF NOT EXISTS customers (
     id INT AUTO_INCREMENT PRIMARY KEY,
