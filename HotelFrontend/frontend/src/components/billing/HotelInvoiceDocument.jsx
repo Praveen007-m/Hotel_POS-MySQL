@@ -610,15 +610,17 @@ export const HotelInvoiceDocument = ({
             <Text style={styles.col5}>{Number(totalAmount || 0).toFixed(2)}</Text>
           </View>
 
-          <View style={styles.tableRow}>
-            <Text style={styles.col1}></Text>
-            <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
-              Tax Amount
-            </Text>
-            <Text style={styles.col3}></Text>
-            <Text style={styles.col4}></Text>
-            <Text style={styles.col5}>{totalGstAmount.toFixed(2)}</Text>
-          </View>
+          {gstIncluded && totalGstAmount > 0 && (
+            <View style={styles.tableRow}>
+              <Text style={styles.col1}></Text>
+              <Text style={[styles.col2, styles.boldText, { textAlign: "right" }]}>
+                Tax Amount
+              </Text>
+              <Text style={styles.col3}></Text>
+              <Text style={styles.col4}></Text>
+              <Text style={styles.col5}>{totalGstAmount.toFixed(2)}</Text>
+            </View>
+          )}
 
           {guestDiscount > 0 && (
             <View style={styles.tableRow}>

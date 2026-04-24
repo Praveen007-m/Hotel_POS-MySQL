@@ -19,12 +19,16 @@ const BillingModal = ({
   const [isOpen, setOpen] = useState(false);
   const [gstNumber, setGstNumber] = useState("");
   const [guestDiscount, setGuestDiscount] = useState(0);
+  const [isBillGenerated, setIsBillGenerated] = useState(false);
 
   useEffect(() => {
-    if (selectedBill?.gst_number) {
-      setGstNumber(selectedBill.gst_number);
+    if (open) {
+      setGstNumber(selectedBill?.gst_number || "");
+      setGuestDiscount(0);
+      setOpen(false);
+      setIsBillGenerated(true);
     }
-  }, [selectedBill]);
+  }, [open, selectedBill]);
 
   const safeForm = form || EMPTY_FORM;
 
@@ -85,23 +89,27 @@ const BillingModal = ({
   if (!open || !selectedBill || !form) return null;
 
   const safeGst = {
-    room: roomGstRate,
-    kitchen: DEFAULT_GST_RATES.kitchen,
-    addon: DEFAULT_GST_RATES.addon,
+    room: Number(selectedBill?.totals?.gst_rates?.room ?? roomGstRate),
+    kitchen: Number(
+      selectedBill?.totals?.gst_rates?.kitchen ?? DEFAULT_GST_RATES.kitchen
+    ),
+    addon: Number(
+      selectedBill?.totals?.gst_rates?.addon ?? DEFAULT_GST_RATES.addon
+    ),
   };
 
   const subtotal = roomCharges + kitchenCharges + addOnsTotal;
-  const roomGst = roomCharges * safeGst.room;
-  const kitchenGst = kitchenCharges * safeGst.kitchen;
-  const addOnsGst = addOnsTotal * safeGst.addon;
+  const roomGst = isBillGenerated ? roomCharges * safeGst.room : 0;
+  const kitchenGst = isBillGenerated ? kitchenCharges * safeGst.kitchen : 0;
+  const addOnsGst = 0;
   const totalGst = roomGst + kitchenGst + addOnsGst;
   const subtotalWithGst = subtotal + totalGst;
   const appliedDiscount =
     Number(safeForm.discount || 0) + Number(guestDiscount || 0);
-  const totalAmountWithGst = subtotalWithGst;
+  const totalAmount = isBillGenerated ? subtotalWithGst : subtotal;
   const advancePaid = Number(selectedBill.advance_paid || 0);
   const balanceAmount = Number(
-    (totalAmountWithGst - appliedDiscount - advancePaid).toFixed(2)
+    (totalAmount - appliedDiscount - advancePaid).toFixed(2)
   );
 
   const roomGstPercent = Number((safeGst.room * 100).toFixed(2));
@@ -215,16 +223,18 @@ const BillingModal = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-4 p-3 bg-white rounded-lg border border-gray-200">
-            <span className="text-sm font-medium">GST is applied internally</span>
-            <span className="text-xs text-gray-600">
-              (Room: {roomGstPercent}%{" "}
-              {roomCharges > DEFAULT_GST_RATES.room.threshold
-                ? "- Above Rs7500"
-                : "- Below Rs7500"}
-              , Kitchen: {kitchenGstPercent}%)
-            </span>
-          </div>
+          {isBillGenerated && (
+            <div className="flex items-center gap-4 p-3 bg-white rounded-lg border border-gray-200">
+              <span className="text-sm font-medium">GST applied to final bill</span>
+              <span className="text-xs text-gray-600">
+                (Room: {roomGstPercent}%{" "}
+                {roomCharges > DEFAULT_GST_RATES.room.threshold
+                  ? "- Above Rs7500"
+                  : "- Below Rs7500"}
+                , Kitchen: {kitchenGstPercent}%)
+              </span>
+            </div>
+          )}
 
           {(selectedBill.lines?.addon ?? []).length > 0 && (
             <div className="p-3 bg-white rounded-lg border border-gray-200 space-y-1">
@@ -345,19 +355,23 @@ const BillingModal = ({
             )}
 
             <p><b>Subtotal:</b> Rs{subtotal.toFixed(2)}</p>
-            {roomGst > 0 && (
-              <p><b>Room GST ({roomGstPercent}%):</b> Rs{roomGst.toFixed(2)}</p>
+            {isBillGenerated && (
+              <>
+                {roomGst > 0 && (
+                  <p><b>Room GST ({roomGstPercent}%):</b> Rs{roomGst.toFixed(2)}</p>
+                )}
+                {kitchenGst > 0 && (
+                  <p><b>Kitchen GST ({kitchenGstPercent}%):</b> Rs{kitchenGst.toFixed(2)}</p>
+                )}
+                <p><b>Subtotal with GST:</b> Rs{subtotalWithGst.toFixed(2)}</p>
+              </>
             )}
-            {kitchenGst > 0 && (
-              <p><b>Kitchen GST ({kitchenGstPercent}%):</b> Rs{kitchenGst.toFixed(2)}</p>
-            )}
-            <p><b>Subtotal with GST:</b> Rs{subtotalWithGst.toFixed(2)}</p>
 
             <hr className="my-2 border-gray-300" />
 
             <p className="flex justify-between">
-              <span><b>Total Amount (Incl. GST):</b></span>
-              <span>Rs{totalAmountWithGst.toFixed(2)}</span>
+              <span><b>{isBillGenerated ? "Total Amount (Incl. GST):" : "Total Amount:"}</b></span>
+              <span>Rs{totalAmount.toFixed(2)}</span>
             </p>
 
             {appliedDiscount > 0 && (
@@ -391,16 +405,16 @@ const BillingModal = ({
                   gstRates: {
                     room: safeGst.room,
                     kitchen: safeGst.kitchen,
-                    addon: safeGst.addon,
+                    addon: 0,
                   },
                   gstAmounts: {
                     room: roomGst,
                     kitchen: kitchenGst,
-                    addon: addOnsGst,
+                    addon: 0,
                   },
                   subtotal,
                   subtotalWithGst,
-                  totalAmount: totalAmountWithGst,
+                  totalAmount,
                   advancePaid,
                   balanceAmount,
                   guestDiscount: appliedDiscount,

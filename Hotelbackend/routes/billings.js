@@ -18,11 +18,12 @@ const billingService = require('../services/billingService');
 
 router.get("/", async (req, res) => {
   try {
-    const { page = 1, limit = 50, search } = req.query;
+    const { page = 1, limit = 50, search, includeDownloaded } = req.query;
     const result = await billingService.getBillings({ 
       page: parseInt(page), 
       limit: parseInt(limit), 
-      search: search || '' 
+      search: search || '',
+      includeDownloaded: String(includeDownloaded).toLowerCase() === "true",
     });
     res.json(result);
   } catch (error) {

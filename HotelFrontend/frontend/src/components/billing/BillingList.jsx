@@ -33,6 +33,11 @@ const BillingList = () => {
     discount: 0,
   });
 
+  const removeBillFromUi = (billId) => {
+    setBillings((prev) => prev.filter((b) => b.id !== billId));
+    setFilteredBillings((prev) => prev.filter((b) => b.id !== billId));
+  };
+
   /* ================= FETCH BILLINGS ================= */
   const fetchBills = async () => {
     setLoading(true);
@@ -99,15 +104,10 @@ const BillingList = () => {
       return;
     }
 
-    // Optimistically update UI
-    const updateDownloaded = (list) =>
-      list.map((b) =>
-        b.id === billId
-          ? { ...b, is_downloaded: 1, gst_number: gstNumber || b.gst_number }
-          : b,
-      );
-    setBillings(updateDownloaded);
-    setFilteredBillings(updateDownloaded);
+    // Optimistically hide the row while preserving the DB record.
+    removeBillFromUi(billId);
+    setModalOpen(false);
+    setSelectedBill(null);
 
     try {
       const token = localStorage.getItem("token");
@@ -116,7 +116,7 @@ const BillingList = () => {
       await axios.patch(`${API_BASE_URL}/api/billings/${billId}/downloaded`, body, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      toast.success("Bill marked as downloaded");
+      toast.success("Bill downloaded and hidden from the list");
     } catch (err) {
       // Revert optimistic update on error
       fetchBills();
@@ -300,7 +300,6 @@ const BillingList = () => {
             billings={paginatedBills}
             onOpen={openModal}
             onDelete={handleDeleteBill}
-            onMarkDownloaded={handleMarkDownloaded}
           />
 
           {totalPages > 1 && (

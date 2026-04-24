@@ -10,7 +10,7 @@ const formatBillDate = (dateStr) => {
 };
 
 /* ================= THREE DOTS MENU ================= */
-const ActionsMenu = ({ bill, onOpen, onDelete, downloaded, onMarkDownloaded }) => {
+const ActionsMenu = ({ bill, onOpen, onDelete, downloaded }) => {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef(null);
@@ -52,7 +52,6 @@ const ActionsMenu = ({ bill, onOpen, onDelete, downloaded, onMarkDownloaded }) =
   const handleGenerate = () => {
     setOpen(false);
     onOpen(bill);
-    onMarkDownloaded(bill.id);
   };
 
   return (
@@ -132,7 +131,7 @@ const ActionsMenu = ({ bill, onOpen, onDelete, downloaded, onMarkDownloaded }) =
 };
 
 /* ================= BILLING TABLE ================= */
-const BillingTable = ({ billings = [], onOpen, onDelete, onMarkDownloaded }) => {
+const BillingTable = ({ billings = [], onOpen, onDelete }) => {
   const [hoveredRow, setHoveredRow] = useState(null);
 
   if (!onOpen || typeof onOpen !== "function") {
@@ -200,6 +199,9 @@ const BillingTable = ({ billings = [], onOpen, onDelete, onMarkDownloaded }) => 
               {billings.map((b, idx) => {
                 const isHovered = hoveredRow === b.id;
                 const isDownloaded = !!b.is_downloaded;
+                const displayTotal = Number(
+                  b.line_items_total ?? b.total_amount ?? 0
+                );
 
                 return (
                   <tr
@@ -313,7 +315,7 @@ const BillingTable = ({ billings = [], onOpen, onDelete, onMarkDownloaded }) => 
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-0.5">
                         <span className="text-[13px] font-bold text-gray-900 whitespace-nowrap">
-                          ₹{Number(b.total_amount || 0).toLocaleString("en-IN")}
+                          ₹{displayTotal.toLocaleString("en-IN")}
                         </span>
                         <span className="text-[9px] text-blue-500 font-semibold uppercase tracking-wide">
                           total
@@ -328,7 +330,6 @@ const BillingTable = ({ billings = [], onOpen, onDelete, onMarkDownloaded }) => 
                         onOpen={onOpen}
                         onDelete={onDelete}
                         downloaded={isDownloaded}
-                        onMarkDownloaded={onMarkDownloaded}
                       />
                     </td>
                   </tr>

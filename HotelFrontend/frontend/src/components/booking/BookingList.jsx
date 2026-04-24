@@ -59,7 +59,13 @@ export default function BookingList({
         })
       : "-";
 
-  const recomputeTotals = (price, stayDays, addons, currentKitchenTotal = 0) => {
+  const recomputeTotals = (
+    price,
+    stayDays,
+    addons,
+    currentKitchenTotal = 0,
+    { includeGst = false } = {}
+  ) => {
     const roomSubtotal = Number(price || 0) * Number(stayDays || 1);
     const kitchenSubtotal = Number(currentKitchenTotal || 0);
     const addonSubtotal = Object.values(addons || {}).reduce(
@@ -81,9 +87,9 @@ export default function BookingList({
       return Number((amount * rate).toFixed(2));
     };
 
-    const roomGst = calculateGST(roomSubtotal, "room");
-    const kitchenGst = calculateGST(kitchenSubtotal, "kitchen");
-    const addonGst = calculateGST(addonSubtotal, "addon");
+    const roomGst = includeGst ? calculateGST(roomSubtotal, "room") : 0;
+    const kitchenGst = includeGst ? calculateGST(kitchenSubtotal, "kitchen") : 0;
+    const addonGst = includeGst ? calculateGST(addonSubtotal, "addon") : 0;
 
     const subtotal = roomSubtotal + kitchenSubtotal + addonSubtotal;
     const gstTotal = roomGst + kitchenGst + addonGst;
@@ -100,6 +106,39 @@ export default function BookingList({
       subtotal,
       totalAmount 
     };
+  };
+
+  const getCheckoutTotals = ({
+    roomPrice,
+    stayDays,
+    addons,
+    currentKitchenTotal = 0,
+    discount = 0,
+    advancePaid = 0,
+    includeGst = false,
+  }) => {
+    const totals = recomputeTotals(roomPrice, stayDays, addons, currentKitchenTotal, {
+      includeGst,
+    });
+
+    return {
+      ...totals,
+      balanceAmount: Number(
+        (
+          Number(totals.totalAmount || 0) -
+          Number(discount || 0) -
+          Number(advancePaid || 0)
+        ).toFixed(2)
+      ),
+    };
+  };
+
+  const resetCheckoutState = () => {
+    setCheckoutBooking(null);
+    setCheckoutData({});
+    setKitchenTotal(0);
+    setAddonTotal(0);
+    setSelectedAddonId("");
   };
 
   const buildAddonMap = (booking, previewAddOns = []) => {
@@ -176,20 +215,23 @@ export default function BookingList({
 
     const addons = buildAddonMap(booking, preview?.add_ons || []);
     const nextKitchenTotal = Number(preview?.kitchenTotal || preview?.kitchen_total || 0);
-    const {
-      roomTotal: nextRoomTotal,
-      roomGst,
-      kitchenTotal: nextKitchenTotalReturn,
-      kitchenGst,
-      addonTotal: nextAddonTotal,
-      addonGst,
-      gstTotal,
-      subtotal,
-      totalAmount,
-    } = recomputeTotals(roomPrice, stayDays, addons, nextKitchenTotal);
+    const resolvedAdvancePaid = Number(
+      preview?.advancePaid || preview?.advance_paid || advancePaid
+    );
+    const resolvedDiscount = Number(booking.discount || 0);
+    const checkoutTotals = getCheckoutTotals({
+      roomPrice,
+      stayDays,
+      addons,
+      currentKitchenTotal: nextKitchenTotal,
+      discount: resolvedDiscount,
+      advancePaid: resolvedAdvancePaid,
+      includeGst: false,
+    });
 
     setKitchenTotal(nextKitchenTotal);
-    setAddonTotal(nextAddonTotal);
+    setAddonTotal(checkoutTotals.addonTotal);
+    setSelectedAddonId("");
     setCheckoutBooking(booking);
     setCheckoutData({
       check_out: getLocalDateTimeInput(),
@@ -198,20 +240,11 @@ export default function BookingList({
       stayDays,
       add_ons: addons,
       kitchenTotal: nextKitchenTotal,
-      addonTotal: nextAddonTotal,
-      roomTotal: nextRoomTotal,
-      roomGst,
-      kitchenTotalReturn: nextKitchenTotalReturn,
-      kitchenGst,
-      addonGst,
-      subtotal,
-      gstTotal,
-      totalAmount,
-      advancePaid: Number(preview?.advancePaid || preview?.advance_paid || advancePaid),
-      balanceAmount: totalAmount - Number(booking.discount || 0) - Number(preview?.advancePaid || preview?.advance_paid || advancePaid),
+      advancePaid: resolvedAdvancePaid,
       status: booking.status,
       gstNumber: booking.gst_number || "",
-      discount: Number(booking.discount || 0),
+      discount: resolvedDiscount,
+      ...checkoutTotals,
     });
   };
 
@@ -233,35 +266,22 @@ export default function BookingList({
       ...checkoutData.add_ons,
       [key]: { label: addon.name, price: Number(addon.price), selected: true },
     };
+    const checkoutTotals = getCheckoutTotals({
+      roomPrice: checkoutData.roomPrice,
+      stayDays: checkoutData.stayDays,
+      addons: updatedAddons,
+      currentKitchenTotal: kitchenTotal,
+      discount: checkoutData.discount,
+      advancePaid: checkoutData.advancePaid,
+      includeGst: false,
+    });
 
-        const { 
-      roomTotal, 
-      roomGst, 
-      kitchenTotal: kTotal, 
-      kitchenGst, 
-      addonTotal: nextAddonTotal, 
-      addonGst,
-      subtotal,
-      gstTotal, 
-      totalAmount 
-    } = recomputeTotals(checkoutData.roomPrice, checkoutData.stayDays, updatedAddons, kitchenTotal); 
-    
-    setAddonTotal(nextAddonTotal); 
-    setCheckoutData((prev) => ({ 
-      ...prev, 
-      add_ons: updatedAddons, 
-      addonTotal: nextAddonTotal, 
-      roomTotal,
-      roomGst,
-      kitchenTotalReturn: kTotal,
-      kitchenGst,
-      addonGst,
-      subtotal,
-      gstTotal, 
-      totalAmount, 
-      balanceAmount: totalAmount - Number(prev.discount || 0) - Number(prev.advancePaid || 0), 
+    setAddonTotal(checkoutTotals.addonTotal);
+    setCheckoutData((prev) => ({
+      ...prev,
+      add_ons: updatedAddons,
+      ...checkoutTotals,
     }));
-
 
     setSelectedAddonId("");
     toast.success(`${addon.name} added`);
@@ -275,33 +295,21 @@ export default function BookingList({
         selected: !checkoutData.add_ons[key].selected,
       },
     };
+    const checkoutTotals = getCheckoutTotals({
+      roomPrice: checkoutData.roomPrice,
+      stayDays: checkoutData.stayDays,
+      addons: updatedAddons,
+      currentKitchenTotal: kitchenTotal,
+      discount: checkoutData.discount,
+      advancePaid: checkoutData.advancePaid,
+      includeGst: false,
+    });
 
-        const { 
-      roomTotal, 
-      roomGst, 
-      kitchenTotal: kTotal, 
-      kitchenGst, 
-      addonTotal: nextAddonTotal, 
-      addonGst,
-      subtotal,
-      gstTotal, 
-      totalAmount 
-    } = recomputeTotals(checkoutData.roomPrice, checkoutData.stayDays, updatedAddons, kitchenTotal); 
-    
-    setAddonTotal(nextAddonTotal); 
-    setCheckoutData((prev) => ({ 
-      ...prev, 
-      add_ons: updatedAddons, 
-      addonTotal: nextAddonTotal, 
-      roomTotal,
-      roomGst,
-      kitchenTotalReturn: kTotal,
-      kitchenGst,
-      addonGst,
-      subtotal,
-      gstTotal, 
-      totalAmount, 
-      balanceAmount: totalAmount - Number(prev.discount || 0) - Number(prev.advancePaid || 0), 
+    setAddonTotal(checkoutTotals.addonTotal);
+    setCheckoutData((prev) => ({
+      ...prev,
+      add_ons: updatedAddons,
+      ...checkoutTotals,
     }));
 
   };
@@ -316,24 +324,22 @@ export default function BookingList({
         checkoutData.roomPrice,
         checkoutData.stayDays,
         checkoutData.add_ons,
-        kitchenTotal
+        kitchenTotal,
+        { includeGst: true }
       );
 
       await auth.post(`/bookings/${checkoutBooking.id}/checkout`, {
         check_out: checkoutData.check_out,
         add_ons: finalAddOns,
-        total_amount: checkoutData.totalAmount,
+        total_amount: totalAmount,
         discount: Number(checkoutData.discount || 0),
         gst_number: checkoutData.gstNumber || undefined,
       });
 
       setAddonTotal(nextAddonTotal);
-      toast.success("Checkout completed & bill generated");
+      toast.success("Checkout completed successfully");
       onCheckoutComplete?.(checkoutBooking.id);
-      setCheckoutBooking(null);
-      setCheckoutData({});
-      setKitchenTotal(0);
-      setAddonTotal(0);
+      resetCheckoutState();
     } catch (err) {
       console.error(err);
       toast.error(
@@ -393,13 +399,7 @@ export default function BookingList({
       {checkoutBooking && (
         <div className="fixed inset-0 bg-black/40 flex justify-center z-50 overflow-y-auto p-4">
           <div className="bg-white p-6 rounded-xl max-w-2xl w-full my-6 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold mb-4">
-              Final Checkout - Generate Bill & Settle Orders
-            </h3>
-
-            <p className="text-sm text-gray-600 mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
-              This will generate the final bill with room, kitchen, and selected add-ons.
-            </p>
+            <h3 className="text-xl font-semibold mb-4">Final Checkout</h3>
 
             <p className="mb-2">
               Room: ₹{checkoutData.roomPrice} × {checkoutData.stayDays} nights = ₹{checkoutData.price}
@@ -434,35 +434,19 @@ export default function BookingList({
                 onChange={(e) => {
                   const val = Number(e.target.value) || 0;
                   setCheckoutData((prev) => {
-                    const nextAddons = { ...prev.add_ons };
-                    const { 
-                      roomTotal, 
-                      roomGst, 
-                      kitchenTotal: kTotal, 
-                      kitchenGst, 
-                      addonTotal: nextAddonTotal, 
-                      addonGst,
-                      subtotal,
-                      gstTotal, 
-                      totalAmount 
-                    } = recomputeTotals(
-                      prev.roomPrice,
-                      prev.stayDays,
-                      nextAddons,
-                      kitchenTotal
-                    );
+                    const checkoutTotals = getCheckoutTotals({
+                      roomPrice: prev.roomPrice,
+                      stayDays: prev.stayDays,
+                      addons: prev.add_ons,
+                      currentKitchenTotal: kitchenTotal,
+                      discount: val,
+                      advancePaid: prev.advancePaid,
+                      includeGst: false,
+                    });
                     return {
                       ...prev,
                       discount: val,
-                      roomTotal,
-                      roomGst,
-                      kitchenTotalReturn: kTotal,
-                      kitchenGst,
-                      addonGst,
-                      subtotal,
-                      gstTotal,
-                      totalAmount,
-                      balanceAmount: totalAmount - val - Number(prev.advancePaid || 0),
+                      ...checkoutTotals,
                     };
                   });
                 }}
@@ -525,7 +509,9 @@ export default function BookingList({
                 <span className="text-gray-600">Room Charges:</span>
                 <span className="font-medium">₹{Number(checkoutData.roomTotal || 0).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-xs">
+              <div
+                className={`${Number(checkoutData.roomGst || 0) > 0 ? "flex" : "hidden"} justify-between text-xs`}
+              >
                 <span className="text-gray-400 italic">Room GST:</span>
                 <span className="text-gray-500 font-medium text-[10px]">₹{Number(checkoutData.roomGst || 0).toFixed(2)}</span>
               </div>
@@ -534,7 +520,9 @@ export default function BookingList({
                 <span className="text-gray-600">Kitchen Charges:</span>
                 <span className="font-medium">₹{Number(checkoutData.kitchenTotalReturn || checkoutData.kitchenTotal || 0).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-xs">
+              <div
+                className={`${Number(checkoutData.kitchenGst || 0) > 0 ? "flex" : "hidden"} justify-between text-xs`}
+              >
                 <span className="text-gray-400 italic">Kitchen GST:</span>
                 <span className="text-gray-500 font-medium text-[10px]">₹{Number(checkoutData.kitchenGst || 0).toFixed(2)}</span>
               </div>
@@ -546,7 +534,7 @@ export default function BookingList({
               <hr className="border-blue-100 my-2" />
 
               <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Subtotal (Charges + GST):</span>
+                <span className="text-gray-700">Subtotal:</span>
                 <span className="font-medium">₹{Number(checkoutData.totalAmount || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm text-red-500">
@@ -565,12 +553,7 @@ export default function BookingList({
 
             <div className="flex justify-end gap-3 mt-4">
               <button
-                onClick={() => {
-                  setCheckoutBooking(null);
-                  setCheckoutData({});
-                  setKitchenTotal(0);
-                  setAddonTotal(0);
-                }}
+                onClick={resetCheckoutState}
                 className="border px-4 py-2 rounded"
               >
                 Cancel

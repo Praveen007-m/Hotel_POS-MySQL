@@ -95,14 +95,32 @@ class BillingService {
   /**
    * Get all billings with line item summary
    */
-  async getBillings({ page = 1, limit = 50, search = "" } = {}) {
+  async getBillings({
+    page = 1,
+    limit = 50,
+    search = "",
+    includeDownloaded = false,
+  } = {}) {
     const offset = (page - 1) * limit;
 
-    const whereClause = search
-      ? `WHERE b.booking_id LIKE ? OR c.name LIKE ? OR b.gst_number LIKE ?`
+    const conditions = [];
+    const params = [];
+
+    if (!includeDownloaded) {
+      conditions.push("COALESCE(b.is_downloaded, 0) = 0");
+    }
+
+    if (search) {
+      conditions.push(
+        "(b.booking_id LIKE ? OR c.name LIKE ? OR b.gst_number LIKE ?)"
+      );
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const whereClause = conditions.length
+      ? `WHERE ${conditions.join(" AND ")}`
       : "";
-    const params = search ? [`%${search}%`, `%${search}%`, `%${search}%`] : [];
-    params.push(limit, offset);
+    const listParams = [...params, limit, offset];
 
     const billings = await dbService.all(
       `
@@ -144,12 +162,10 @@ class BillingService {
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
     `,
-      params
+      listParams
     );
 
-    const countParams = search
-      ? [`%${search}%`, `%${search}%`, `%${search}%`]
-      : [];
+    const countParams = [...params];
 
     const total = await dbService.get(
       `
