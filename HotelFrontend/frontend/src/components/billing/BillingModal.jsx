@@ -1,6 +1,6 @@
+import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_GST_RATES, formatIST } from "../../utils/billingUtils";
 import { generateInvoicePDF } from "../../utils/invoicePdf.jsx";
-import { useState, useEffect, useMemo } from "react";
 
 const EMPTY_FORM = {
   discount: 0,
@@ -13,9 +13,6 @@ const BillingModal = ({
   selectedBill,
   form,
   setForm,
-  gstIncluded,
-  setGstIncluded,
-  onGstChange,
   availableAddOns = [],
   onDownload,
 }) => {
@@ -42,9 +39,7 @@ const BillingModal = ({
     roomCharges,
     kitchenCharges,
     backendAddOnsTotal,
-    newAddOnsTotal,
     addOnsTotal,
-    discountedRoom,
     roomGstRate,
   } = useMemo(() => {
     if (!selectedBill) {
@@ -52,24 +47,22 @@ const BillingModal = ({
         roomCharges: 0,
         kitchenCharges: 0,
         backendAddOnsTotal: 0,
-        newAddOnsTotal: 0,
         addOnsTotal: 0,
-        discountedRoom: 0,
         roomGstRate: DEFAULT_GST_RATES.room.low,
       };
     }
 
-    const roomCharges = (selectedBill.lines?.room ?? []).reduce(
+    const nextRoomCharges = (selectedBill.lines?.room ?? []).reduce(
       (sum, item) => sum + Number(item?.total || 0),
       0
     );
 
-    const kitchenCharges = (selectedBill.lines?.kitchen ?? []).reduce(
+    const nextKitchenCharges = (selectedBill.lines?.kitchen ?? []).reduce(
       (sum, item) => sum + Number(item?.total || 0),
       0
     );
 
-    const backendAddOnsTotal = (selectedBill.lines?.addon ?? []).reduce(
+    const nextBackendAddOnsTotal = (selectedBill.lines?.addon ?? []).reduce(
       (sum, item) => sum + Number(item?.total || 0),
       0
     );
@@ -80,16 +73,12 @@ const BillingModal = ({
       0
     );
 
-    const addOnsTotal = backendAddOnsTotal + newAddOnsTotal;
-    const roomGstRate = getRoomGstRate(roomCharges);
-
     return {
-      roomCharges,
-      kitchenCharges,
-      backendAddOnsTotal,
-      newAddOnsTotal,
-      addOnsTotal,
-      roomGstRate,
+      roomCharges: nextRoomCharges,
+      kitchenCharges: nextKitchenCharges,
+      backendAddOnsTotal: nextBackendAddOnsTotal,
+      addOnsTotal: nextBackendAddOnsTotal + newAddOnsTotal,
+      roomGstRate: getRoomGstRate(nextRoomCharges),
     };
   }, [selectedBill, safeForm]);
 
@@ -98,24 +87,25 @@ const BillingModal = ({
   const safeGst = {
     room: roomGstRate,
     kitchen: DEFAULT_GST_RATES.kitchen,
+    addon: DEFAULT_GST_RATES.addon,
   };
 
   const subtotal = roomCharges + kitchenCharges + addOnsTotal;
-  const roomGst = gstIncluded ? roomCharges * safeGst.room : 0;
-  const kitchenGst = gstIncluded ? kitchenCharges * safeGst.kitchen : 0;
-  const addOnsGst = 0; // ✅ NO GST ON ADD-ONS
+  const roomGst = roomCharges * safeGst.room;
+  const kitchenGst = kitchenCharges * safeGst.kitchen;
+  const addOnsGst = addOnsTotal * safeGst.addon;
   const totalGst = roomGst + kitchenGst + addOnsGst;
   const subtotalWithGst = subtotal + totalGst;
-  
-  // Combine all discount sources into one
-  const appliedDiscount = Number(safeForm.discount || 0) + Number(guestDiscount || 0);
-  const totalAmountWithGst = subtotalWithGst; 
+  const appliedDiscount =
+    Number(safeForm.discount || 0) + Number(guestDiscount || 0);
+  const totalAmountWithGst = subtotalWithGst;
   const advancePaid = Number(selectedBill.advance_paid || 0);
-  const balanceAmount = Number((totalAmountWithGst - appliedDiscount - advancePaid).toFixed(2));
+  const balanceAmount = Number(
+    (totalAmountWithGst - appliedDiscount - advancePaid).toFixed(2)
+  );
 
   const roomGstPercent = Number((safeGst.room * 100).toFixed(2));
   const kitchenGstPercent = Number((safeGst.kitchen * 100).toFixed(2));
-  const addonGstPercent = Number((safeGst.addon * 100).toFixed(2));
 
   const handleFormChange = (field, value, index, type) => {
     if (!type) {
@@ -226,22 +216,13 @@ const BillingModal = ({
           </div>
 
           <div className="flex items-center gap-4 p-3 bg-white rounded-lg border border-gray-200">
-            <label className="text-sm font-medium">GST:</label>
-            <select
-              value={gstIncluded ? "with" : "without"}
-              onChange={(e) => {
-                const isWithGst = e.target.value === "with";
-                setGstIncluded(isWithGst);
-                if (onGstChange) onGstChange(isWithGst ? "With GST" : "Without GST");
-              }}
-              className="border rounded-lg p-1 text-sm"
-            >
-              <option value="with">With GST</option>
-              <option value="without">Without GST</option>
-            </select>
-            <span className="text-xs text-gray-600 ml-2">
+            <span className="text-sm font-medium">GST is applied internally</span>
+            <span className="text-xs text-gray-600">
               (Room: {roomGstPercent}%{" "}
-              {roomCharges > DEFAULT_GST_RATES.room.threshold ? "- Above Rs7500" : "- Below Rs7500"})
+              {roomCharges > DEFAULT_GST_RATES.room.threshold
+                ? "- Above Rs7500"
+                : "- Below Rs7500"}
+              , Kitchen: {kitchenGstPercent}%)
             </span>
           </div>
 
@@ -269,7 +250,9 @@ const BillingModal = ({
                 <select
                   value={addon.name}
                   onChange={(e) => {
-                    const selected = availableAddOns.find((item) => item.name === e.target.value);
+                    const selected = availableAddOns.find(
+                      (item) => item.name === e.target.value
+                    );
                     const updated = [...safeForm.add_ons];
                     updated[index] = {
                       name: selected?.name || "",
@@ -344,7 +327,6 @@ const BillingModal = ({
             <p><b>Room Charges:</b> Rs{roomCharges.toFixed(2)}</p>
             <p><b>Kitchen Charges:</b> Rs{kitchenCharges.toFixed(2)}</p>
 
-
             {backendAddOnsTotal > 0 && (
               <p><b>Add-ons (saved):</b> Rs{backendAddOnsTotal.toFixed(2)}</p>
             )}
@@ -363,16 +345,13 @@ const BillingModal = ({
             )}
 
             <p><b>Subtotal:</b> Rs{subtotal.toFixed(2)}</p>
-
-            {gstIncluded && (
-              <>
-                <p><b>Room GST ({roomGstPercent}%):</b> Rs{roomGst.toFixed(2)}</p>
-                <p><b>Kitchen GST ({kitchenGstPercent}%):</b> Rs{kitchenGst.toFixed(2)}</p>
-              </>
+            {roomGst > 0 && (
+              <p><b>Room GST ({roomGstPercent}%):</b> Rs{roomGst.toFixed(2)}</p>
             )}
-
+            {kitchenGst > 0 && (
+              <p><b>Kitchen GST ({kitchenGstPercent}%):</b> Rs{kitchenGst.toFixed(2)}</p>
+            )}
             <p><b>Subtotal with GST:</b> Rs{subtotalWithGst.toFixed(2)}</p>
-
 
             <hr className="my-2 border-gray-300" />
 
@@ -407,9 +386,8 @@ const BillingModal = ({
                 generateInvoicePDF({
                   selectedBill,
                   form,
-                  gstIncluded,
+                  gstIncluded: true,
                   gstNumber,
-                  // guestDiscount,
                   gstRates: {
                     room: safeGst.room,
                     kitchen: safeGst.kitchen,
@@ -418,6 +396,7 @@ const BillingModal = ({
                   gstAmounts: {
                     room: roomGst,
                     kitchen: kitchenGst,
+                    addon: addOnsGst,
                   },
                   subtotal,
                   subtotalWithGst,
@@ -428,6 +407,7 @@ const BillingModal = ({
                   formatIST,
                   action: "download",
                 });
+
                 const billId = selectedBill.id;
                 if (onDownload && billId) {
                   onDownload(billId, gstNumber || "");

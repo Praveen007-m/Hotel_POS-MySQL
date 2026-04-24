@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import auth from "../../auth/axiosInstance";
-import { useNavigate } from "react-router-dom";
 import BookingTable from "./BookingTable";
 import { LoadingSpinner } from "../common/LoadingSpinner";
 import { toast } from "react-toastify";
+import { DEFAULT_GST_RATES } from "../../utils/billingUtils";
 
 export default function BookingList({
   bookings,
@@ -11,6 +11,7 @@ export default function BookingList({
   onDelete,
   onStatusUpdate,
   onEdit,
+  onCheckoutComplete,
 }) {
   const [checkoutBooking, setCheckoutBooking] = useState(null);
   const [checkoutData, setCheckoutData] = useState({});
@@ -19,8 +20,6 @@ export default function BookingList({
   const [selectedAddonId, setSelectedAddonId] = useState("");
   const [kitchenTotal, setKitchenTotal] = useState(0);
   const [addonTotal, setAddonTotal] = useState(0);
-
-  const navigate = useNavigate();
 
   const normalize = (str) => String(str || "").toLowerCase().replace(/\s+/g, "_");
 
@@ -68,12 +67,17 @@ export default function BookingList({
       0
     );
 
-    // GST Calculation logic matching backend (billingUtils)
     const calculateGST = (amount, type) => {
-      let rate = 0.05; // 5% default
-      if (type === "room" && amount / (stayDays || 1) > 7500) {
-        rate = 0.18; // 18% for high-value rooms
+      let rate = DEFAULT_GST_RATES[type];
+
+      if (type === "room") {
+        const perNightAmount = amount / (stayDays || 1);
+        rate =
+          perNightAmount > DEFAULT_GST_RATES.room.threshold
+            ? DEFAULT_GST_RATES.room.high
+            : DEFAULT_GST_RATES.room.low;
       }
+
       return Number((amount * rate).toFixed(2));
     };
 
@@ -325,12 +329,11 @@ export default function BookingList({
 
       setAddonTotal(nextAddonTotal);
       toast.success("Checkout completed & bill generated");
-      onDelete(checkoutBooking.id);
+      onCheckoutComplete?.(checkoutBooking.id);
       setCheckoutBooking(null);
       setCheckoutData({});
       setKitchenTotal(0);
       setAddonTotal(0);
-      navigate("/billing");
     } catch (err) {
       console.error(err);
       toast.error(
@@ -540,11 +543,6 @@ export default function BookingList({
                 <span className="text-gray-600">Add-on Charges:</span>
                 <span className="font-medium">₹{Number(checkoutData.addonTotal || 0).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400 italic">Add-on GST:</span>
-                <span className="text-gray-500 font-medium text-[10px]">₹{Number(checkoutData.addonGst || 0).toFixed(2)}</span>
-              </div>
-
               <hr className="border-blue-100 my-2" />
 
               <div className="flex justify-between text-sm">

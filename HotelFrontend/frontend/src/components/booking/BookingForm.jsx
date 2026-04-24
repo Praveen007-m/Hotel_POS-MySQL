@@ -661,7 +661,8 @@ export default function BookingForm({
             type="number"
             min={0}
             name="discount"
-            value={form.discount ?? ""}
+            value={form.discount === 0 ? "" : form.discount}
+            placeholder="0"
             onChange={(e) =>
               setForm((prev) => ({
                 ...prev,

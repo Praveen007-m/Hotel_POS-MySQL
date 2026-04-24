@@ -1,5 +1,18 @@
 const db = require("../db/database");
 
+const buildBillingFilterClause = (filter) => {
+  switch (filter) {
+    case "today":
+      return "WHERE DATE(created_at) = CURDATE()";
+    case "week":
+      return "WHERE DATE(created_at) BETWEEN DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND CURDATE()";
+    case "month":
+      return "WHERE YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())";
+    default:
+      return "";
+  }
+};
+
 /**
  * GET PROFIT
  * URL: /api/billings/profit?filter=all|today|week|month
@@ -7,27 +20,7 @@ const db = require("../db/database");
 exports.getProfit = (req, res) => {
   try {
     const { filter = "all" } = req.query;
-
-    let whereClause = "";
-
-    // ===== FILTER LOGIC =====
-    if (filter === "today") {
-      whereClause = `
-        WHERE DATE(created_at) = DATE('now')
-      `;
-    }
-
-    if (filter === "week") {
-      whereClause = `
-        WHERE created_at >= DATE('now', 'weekday 0', '-6 days')
-      `;
-    }
-
-    if (filter === "month") {
-      whereClause = `
-        WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
-      `;
-    }
+    const whereClause = buildBillingFilterClause(filter);
 
     // ===== MAIN QUERY =====
     const query = `

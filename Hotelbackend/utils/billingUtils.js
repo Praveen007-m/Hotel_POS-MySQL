@@ -13,7 +13,7 @@ const DEFAULT_GST_RATES = {
     threshold: 7500, // Threshold for applying higher rate
   },
   kitchen: 0.05, // 5% fixed
-  addon: 0.05, // 5% fixed
+  addon: 0, // add-ons are non-taxable
 };
 
 /**

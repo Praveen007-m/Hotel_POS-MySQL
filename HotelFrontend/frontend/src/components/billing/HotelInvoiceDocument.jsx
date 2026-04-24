@@ -392,14 +392,12 @@ export const HotelInvoiceDocument = ({
   }
 
   // ── GST amounts (each kept separate) ──────────────────────────
-  const roomGstAmount    = Number(gstAmounts?.room    || 0);
-  const addonGstAmount   = Number(gstAmounts?.addon   || 0);
+  const roomGstAmount = Number(gstAmounts?.room || 0);
   const kitchenGstAmount = Number(gstAmounts?.kitchen || 0);
-  const totalGstAmount   = roomGstAmount + addonGstAmount + kitchenGstAmount;
+  const totalGstAmount = roomGstAmount + kitchenGstAmount;
 
   // ── GST rate labels ────────────────────────────────────────────
-  const roomGstPct    = ((gstRates?.room    || 0) * 100).toFixed(1);
-  const addonGstPct   = ((gstRates?.addon   || gstRates?.room || 0) * 100).toFixed(1);
+  const roomGstPct = ((gstRates?.room || 0) * 100).toFixed(1);
   const kitchenGstPct = ((gstRates?.kitchen || gstRates?.room || 0) * 100).toFixed(1);
 
   const roomDiscountVal      = Number(form?.discount || 0);
@@ -559,10 +557,8 @@ export const HotelInvoiceDocument = ({
           })}
 
           {/* ── SEPARATE GST ROWS ─────────────────────────────────────────
-              Instead of one combined "GST (5%)" row, we now show:
-                • Room Tariff GST   — always shown when gstIncluded & amount > 0
-                • Add-ons GST       — only when there are add-ons with GST
-                • Kitchen Orders GST — only when there are kitchen items with GST
+              GST stays applied internally, but add-ons are non-taxable.
+              We show only room tariff GST and kitchen GST when applicable.
           ──────────────────────────────────────────────────────────────── */}
 
           {/* Row 1: Room Tariff GST */}
@@ -578,20 +574,7 @@ export const HotelInvoiceDocument = ({
             </View>
           )}
 
-          {/* Row 2: Add-ons GST */}
-          {gstIncluded && addonGstAmount > 0 && (
-            <View style={styles.tableRow}>
-              <Text style={styles.col1}>{lineItemDateOnly}</Text>
-              <Text style={styles.col2}>
-                Add-ons GST ({addonGstPct}%)
-              </Text>
-              <Text style={styles.col3}>{addonGstAmount.toFixed(2)}</Text>
-              <Text style={styles.col4}>0.00</Text>
-              <Text style={styles.col5}>{addonGstAmount.toFixed(2)}</Text>
-            </View>
-          )}
-
-          {/* Row 3: Kitchen Orders GST */}
+          {/* Row 2: Kitchen Orders GST */}
           {gstIncluded && kitchenGstAmount > 0 && (
             <View style={styles.tableRow}>
               <Text style={styles.col1}>{lineItemDateOnly}</Text>

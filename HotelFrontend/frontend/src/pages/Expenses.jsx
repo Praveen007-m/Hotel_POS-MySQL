@@ -23,49 +23,13 @@ const Expenses = () => {
 
   /* ================= LOAD EXPENSES ================= */
   useEffect(() => {
-    getExpenses("all");
+    getExpenses(activeFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeFilter]);
 
   /* ================= FILTER + SEARCH ================= */
   const filteredExpenses = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Start of week (Monday)
-    const startOfWeek = new Date(today);
-    const day = startOfWeek.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    startOfWeek.setDate(startOfWeek.getDate() + diff);
-
-    // End of week (Sunday)
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-
     return expenses.filter((e) => {
-      // ---- DATE PARSE ----
-      const [y, m, d] = e.expense_date.split("-");
-      const expenseDate = new Date(y, m - 1, d);
-      expenseDate.setHours(0, 0, 0, 0);
-
-      // ---- DATE FILTER ----
-      if (activeFilter === "today" && expenseDate.getTime() !== today.getTime())
-        return false;
-
-      if (
-        activeFilter === "week" &&
-        (expenseDate < startOfWeek || expenseDate > endOfWeek)
-      )
-        return false;
-
-      if (
-        activeFilter === "month" &&
-        (expenseDate.getMonth() !== today.getMonth() ||
-          expenseDate.getFullYear() !== today.getFullYear())
-      )
-        return false;
-
-      // ---- SEARCH FILTER ----
       if (!search.trim()) return true;
 
       const q = search.toLowerCase();
@@ -76,7 +40,7 @@ const Expenses = () => {
         e.expense_date.includes(q)
       );
     });
-  }, [expenses, activeFilter, search]);
+  }, [expenses, search]);
 
   /* ================= RESET PAGE ON FILTER/SEARCH ================= */
   useEffect(() => {

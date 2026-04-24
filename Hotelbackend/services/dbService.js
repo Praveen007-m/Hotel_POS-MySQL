@@ -8,14 +8,28 @@ class DbService {
     this.db = db;
   }
 
+  _getExecutor(executor = this.db) {
+    if (!executor || typeof executor.query !== "function") {
+      throw new Error("A query-capable database executor is required");
+    }
+    return executor;
+  }
+
+  async _query(executor, sql, params = []) {
+    const target = this._getExecutor(executor);
+    return target.query(sql, params);
+  }
+
   /**
    * Execute INSERT/UPDATE/DELETE
    */
-  async run(sql, params = []) {
+  async run(sql, params = [], executor = this.db) {
     try {
-      const result = await this.db.run(sql, params);
-      // result already contains { lastID, changes }
-      return result;
+      const [result] = await this._query(executor, sql, params);
+      return {
+        lastID: result?.insertId,
+        changes: result?.affectedRows || 0,
+      };
     } catch (err) {
       console.error("DB RUN Error:", err);
       throw err;
@@ -25,15 +39,10 @@ class DbService {
   /**
    * Get single row
    */
-  async get(sql, params = []) {
+  async get(sql, params = [], executor = this.db) {
     try {
-      const row = await new Promise((resolve, reject) => {
-        this.db.get(sql, params, (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        });
-      });
-      return row;
+      const [rows] = await this._query(executor, sql, params);
+      return Array.isArray(rows) ? rows[0] : undefined;
     } catch (err) {
       console.error("DB GET Error:", err);
       throw err;
@@ -43,15 +52,10 @@ class DbService {
   /**
    * Get multiple rows
    */
-  async all(sql, params = []) {
+  async all(sql, params = [], executor = this.db) {
     try {
-      const rows = await new Promise((resolve, reject) => {
-        this.db.all(sql, params, (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        });
-      });
-      return rows;
+      const [rows] = await this._query(executor, sql, params);
+      return Array.isArray(rows) ? rows : [];
     } catch (err) {
       console.error("DB ALL Error:", err);
       throw err;
@@ -59,28 +63,49 @@ class DbService {
   }
 
   /**
-   * Execute transaction (MySQL-safe)
+   * Execute transaction on a single MySQL connection.
    */
   async transaction(fn) {
-    await this.run("START TRANSACTION"); // ✅ MySQL syntax
+    const connection = await this.db.pool.getConnection();
+    const tx = {
+      run: (sql, params = []) => this.run(sql, params, connection),
+      get: (sql, params = []) => this.get(sql, params, connection),
+      all: (sql, params = []) => this.all(sql, params, connection),
+      idempotencyExists: (key) => this.idempotencyExists(key, connection),
+      getBookingWithDetails: (bookingId) =>
+        this.getBookingWithDetails(bookingId, connection),
+      getKitchenOrdersForBilling: (bookingId) =>
+        this.getKitchenOrdersForBilling(bookingId, connection),
+      getBookingAddons: (bookingId) =>
+        this.getBookingAddons(bookingId, connection),
+      getKitchenBillingSummary: (bookingId) =>
+        this.getKitchenBillingSummary(bookingId, connection),
+      getKitchenOrdersForInvoice: (bookingId) =>
+        this.getKitchenOrdersForInvoice(bookingId, connection),
+    };
+
     try {
-      const result = await fn();
-      await this.run("COMMIT");
+      await connection.beginTransaction();
+      const result = await fn(tx);
+      await connection.commit();
       return result;
     } catch (error) {
-      await this.run("ROLLBACK");
+      await connection.rollback();
       console.error("Transaction rolled back:", error);
       throw error;
+    } finally {
+      connection.release();
     }
   }
 
   /**
    * Check idempotency key
    */
-  async idempotencyExists(key) {
+  async idempotencyExists(key, executor = this.db) {
     const row = await this.get(
       "SELECT id FROM billings WHERE idempotency_key = ?",
-      [key]
+      [key],
+      executor
     );
     return !!row;
   }
@@ -88,22 +113,26 @@ class DbService {
   /**
    * Get booking with full details
    */
-  async getBookingWithDetails(bookingId) {
+  async getBookingWithDetails(bookingId, executor = this.db) {
     const booking = await this.get(
       `SELECT b.*, c.name AS customer_name, r.room_number, r.category
        FROM bookings b
        JOIN customers c ON b.customer_id = c.id
        JOIN rooms r ON b.room_id = r.id
        WHERE b.id = ?`,
-      [bookingId]
+      [bookingId],
+      executor
     );
 
     if (!booking) return null;
 
-    const addons = await this.getBookingAddons(booking.booking_id);
+    const addons = await this.getBookingAddons(booking.booking_id, executor);
     const addonsTotal = addons.reduce((sum, a) => sum + Number(a.price || 0), 0);
 
-    const kitchenSummary = await this.getKitchenBillingSummary(booking.booking_id);
+    const kitchenSummary = await this.getKitchenBillingSummary(
+      booking.booking_id,
+      executor
+    );
     const kitchenTotal = Number(kitchenSummary.kitchenTotal || 0);
 
     return {
@@ -112,14 +141,17 @@ class DbService {
       addonsTotal,
       kitchenTotal,
       grandTotal:
-        Number(booking.price || 0) * (booking.stayDays || 1) + addonsTotal + kitchenTotal - Number(booking.discount || 0),
+        Number(booking.price || 0) * (booking.stayDays || 1) +
+        addonsTotal +
+        kitchenTotal -
+        Number(booking.discount || 0),
     };
   }
 
   /**
    * Get kitchen orders for a booking (only 'served' status)
    */
-  async getKitchenOrdersForBilling(bookingId) {
+  async getKitchenOrdersForBilling(bookingId, executor = this.db) {
     return await this.all(
       `SELECT 
         ko.id,
@@ -132,18 +164,20 @@ class DbService {
        WHERE ko.booking_id = ?
        AND ko.status = 'Served'
        ORDER BY ko.created_at ASC`,
-      [bookingId]
+      [bookingId],
+      executor
     );
   }
 
-  async getBookingAddons(bookingId) {
+  async getBookingAddons(bookingId, executor = this.db) {
     return await this.all(
       `SELECT id, name, price FROM booking_addons WHERE booking_id = ?`,
-      [bookingId]
+      [bookingId],
+      executor
     );
   }
 
-  async getKitchenBillingSummary(bookingId) {
+  async getKitchenBillingSummary(bookingId, executor = this.db) {
     const row = await this.get(
       `SELECT
          COALESCE(SUM(mi.price * ko.quantity), 0) AS kitchenTotal
@@ -151,7 +185,8 @@ class DbService {
        LEFT JOIN menu_items mi ON ko.item_id = mi.id
        WHERE ko.booking_id = ?
          AND UPPER(COALESCE(ko.status, '')) IN ('SERVED', 'READY', 'READY FOR BILLING')`,
-      [bookingId]
+      [bookingId],
+      executor
     );
 
     return {
@@ -159,7 +194,7 @@ class DbService {
     };
   }
 
-  async getKitchenOrdersForInvoice(bookingId) {
+  async getKitchenOrdersForInvoice(bookingId, executor = this.db) {
     return await this.all(
       `SELECT
          ko.id,
@@ -173,7 +208,8 @@ class DbService {
        WHERE ko.booking_id = ?
          AND UPPER(COALESCE(ko.status, '')) IN ('SERVED', 'READY', 'READY FOR BILLING')
        ORDER BY ko.created_at ASC, ko.id ASC`,
-      [bookingId]
+      [bookingId],
+      executor
     );
   }
 }

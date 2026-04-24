@@ -1,6 +1,6 @@
-const dbService = require('./dbService');
-const invoiceService = require('./invoiceService');
-const { DEFAULT_GST_RATES } = require('../utils/billingUtils');
+const dbService = require("./dbService");
+const invoiceService = require("./invoiceService");
+const { calculateBillingTotals } = require("../utils/billingCalculator");
 
 /**
  * Billing service for list operations and enhancements
@@ -22,41 +22,32 @@ class BillingService {
     );
 
     if (!booking) {
-      throw new Error('Booking not found');
+      throw new Error("Booking not found");
     }
 
-    // Calculate stay days
-    const checkInDate = new Date(booking.check_in);
-    const checkOutDate = new Date(booking.check_out);
-    checkInDate.setHours(0, 0, 0, 0);
-    checkOutDate.setHours(0, 0, 0, 0);
-    const stayDays = Math.max(
-      Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24)),
-      1
+    const kitchenSummary = await dbService.getKitchenBillingSummary(
+      booking.booking_id
     );
-
-    // ========== ROOM CHARGES ==========
-    const roomTotal = Number(booking.price_per_night || 0) * stayDays;
-
-    // ========== KITCHEN CHARGES ==========
-    const kitchenSummary = await dbService.getKitchenBillingSummary(booking.booking_id);
     const kitchenTotal = Number(kitchenSummary.kitchenTotal || 0);
 
-    // ========== ADD-ONS ==========
     const addonsData = await dbService.getBookingAddons(booking.booking_id);
     const addonsTotal = addonsData.reduce(
-      (sum, a) => sum + Number(a.price || 0),
+      (sum, addon) => sum + Number(addon.price || 0),
       0
     );
 
-    // ========== TOTALS ==========
-    const subtotal = roomTotal + kitchenTotal + addonsTotal;
-    const gstRate = this._getGstRate('room', roomTotal);
-    const gst = subtotal * gstRate;
-    const total = subtotal + gst;
-    const advancePaid = Number(booking.advance_paid || 0);
-    const balance = total - advancePaid;
-    const balanceAmount = subtotal - advancePaid;
+    const calculation = calculateBillingTotals({
+      checkIn: booking.check_in,
+      checkOut: booking.check_out,
+      roomRate:
+        booking.price !== undefined && booking.price !== null
+          ? Number(booking.price || 0)
+          : Number(booking.price_per_night || 0),
+      kitchenTotal,
+      addonTotal: addonsTotal,
+      discount: Number(booking.discount || 0),
+      advancePaid: Number(booking.advance_paid || 0),
+    });
 
     return {
       booking_id: booking.booking_id,
@@ -69,58 +60,52 @@ class BillingService {
       category: booking.category,
       check_in: booking.check_in,
       check_out: booking.check_out,
-      stay_days: stayDays,
-      room_price_per_night: Number(booking.price_per_night || 0),
-      
-      // ✅ BILLING BREAKDOWN
-      room_charges: Number(roomTotal.toFixed(2)),
-      kitchen_total: Number(kitchenTotal.toFixed(2)),
-      add_ons_total: Number(addonsTotal.toFixed(2)),
-      roomTotal: Number(roomTotal.toFixed(2)),
-      kitchenTotal: Number(kitchenTotal.toFixed(2)),
-      addonTotal: Number(addonsTotal.toFixed(2)),
-      
-      // ✅ ADD-ONS DETAILS
-      add_ons: addonsData.map(a => ({
-        id: a.id,
-        name: a.name,
-        price: Number(a.price || 0)
-      })),
-      
-      // ✅ FINAL TOTALS
-      subtotal: Number(subtotal.toFixed(2)),
-      gst_rate: gstRate,
-      gst: Number(gst.toFixed(2)),
-      total: Number(total.toFixed(2)),
-      totalAmount: Number(subtotal.toFixed(2)),
-      advance_paid: Number(advancePaid.toFixed(2)),
-      advancePaid: Number(advancePaid.toFixed(2)),
-      balance: Number(balance.toFixed(2)),
-      balanceAmount: Number(balanceAmount.toFixed(2))
-    };
-  }
+      stay_days: calculation.stayDays,
+      room_price_per_night: calculation.roomRatePerNight,
 
-  _getGstRate(type, amount) {
-    if (type === "room" && amount > DEFAULT_GST_RATES.room.threshold) {
-      return DEFAULT_GST_RATES.room.high;
-    }
-    const rates = DEFAULT_GST_RATES[type];
-    return typeof rates === "object" ? rates.low : rates || 0;
+      room_charges: calculation.roomTotal,
+      kitchen_total: calculation.kitchenTotal,
+      add_ons_total: calculation.addonTotal,
+      roomTotal: calculation.roomTotal,
+      kitchenTotal: calculation.kitchenTotal,
+      addonTotal: calculation.addonTotal,
+
+      add_ons: addonsData.map((addon) => ({
+        id: addon.id,
+        name: addon.name,
+        price: Number(addon.price || 0),
+      })),
+
+      subtotal: calculation.subtotal,
+      gst_rate: calculation.gstRates.room,
+      gst: calculation.gstAmount,
+      total: calculation.totalAmount,
+      totalAmount: calculation.totalAmount,
+      discount: calculation.discount,
+      advance_paid: calculation.advancePaid,
+      advancePaid: calculation.advancePaid,
+      balance: calculation.finalPayable,
+      balanceAmount: calculation.finalPayable,
+      gst_breakdown: calculation.gstBreakdown,
+      gst_rates: calculation.gstRates,
+      finalAmount: calculation.finalAmount,
+    };
   }
 
   /**
    * Get all billings with line item summary
    */
-  async getBillings({ page = 1, limit = 50, search = '' } = {}) {
+  async getBillings({ page = 1, limit = 50, search = "" } = {}) {
     const offset = (page - 1) * limit;
-    
-    const whereClause = search 
+
+    const whereClause = search
       ? `WHERE b.booking_id LIKE ? OR c.name LIKE ? OR b.gst_number LIKE ?`
-      : '';
+      : "";
     const params = search ? [`%${search}%`, `%${search}%`, `%${search}%`] : [];
     params.push(limit, offset);
 
-    const billings = await dbService.all(`
+    const billings = await dbService.all(
+      `
       SELECT 
         b.id,
         b.booking_id AS booking_id,
@@ -158,18 +143,23 @@ class BillingService {
         c.name
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
-    `, params);
+    `,
+      params
+    );
 
-const countParams = search 
-  ? [`%${search}%`, `%${search}%`, `%${search}%`] 
-  : [];
+    const countParams = search
+      ? [`%${search}%`, `%${search}%`, `%${search}%`]
+      : [];
 
-const total = await dbService.get(`
-  SELECT COUNT(DISTINCT b.id) as count
-  FROM billings b
-  LEFT JOIN customers c ON b.customer_id = c.id
-  ${whereClause}
-`, countParams);
+    const total = await dbService.get(
+      `
+      SELECT COUNT(DISTINCT b.id) as count
+      FROM billings b
+      LEFT JOIN customers c ON b.customer_id = c.id
+      ${whereClause}
+    `,
+      countParams
+    );
 
     return {
       billings,
@@ -177,8 +167,8 @@ const total = await dbService.get(`
         page,
         limit,
         total: total.count,
-        pages: Math.ceil(total.count / limit)
-      }
+        pages: Math.ceil(total.count / limit),
+      },
     };
   }
 
@@ -194,7 +184,7 @@ const total = await dbService.get(`
    */
   async markDownloaded(billingId, gstNumber) {
     await dbService.run(
-      'UPDATE billings SET is_downloaded = 1, gst_number = ? WHERE id = ?',
+      "UPDATE billings SET is_downloaded = 1, gst_number = ? WHERE id = ?",
       [gstNumber, billingId]
     );
   }
@@ -203,10 +193,13 @@ const total = await dbService.get(`
    * Get profit/loss summary
    */
   async getProfitSummary({ startDate, endDate } = {}) {
-    const whereClause = endDate ? 'WHERE DATE(b.created_at) BETWEEN ? AND ?' : '';
+    const whereClause = endDate
+      ? "WHERE DATE(b.created_at) BETWEEN ? AND ?"
+      : "";
     const params = endDate ? [startDate, endDate] : [];
 
-    const profit = await dbService.get(`
+    const profit = await dbService.get(
+      `
       SELECT 
         COUNT(*) as total_bills,
         SUM(total_amount) as revenue,
@@ -214,9 +207,13 @@ const total = await dbService.get(`
         SUM(advance_paid) as total_advance
       FROM billings b
       ${whereClause}
-    `, params);
+    `,
+      params
+    );
 
-    return profit || { total_bills: 0, revenue: 0, avg_bill: 0, total_advance: 0 };
+    return (
+      profit || { total_bills: 0, revenue: 0, avg_bill: 0, total_advance: 0 }
+    );
   }
 }
 

@@ -30,7 +30,11 @@ export default function Booking() {
     try {
       const res = await auth.get("/bookings");
       setBookings(res.data);
-      setFilteredBookings(res.data); // initial
+      setFilteredBookings(
+        res.data.filter(
+          (booking) => booking.status?.toLowerCase() !== "checked-out",
+        ),
+      );
     } catch (error) {
       console.error(error);
       toast.error("Failed to load bookings.");
@@ -67,7 +71,9 @@ export default function Booking() {
     setSearchLoading(true);
 
     const timer = setTimeout(() => {
-      let result = bookings;
+      let result = bookings.filter(
+        (booking) => booking.status?.toLowerCase() !== "checked-out",
+      );
 
       // 🔍 Search filter
       if (search.trim()) {
@@ -78,7 +84,8 @@ export default function Booking() {
             String(booking.id).includes(searchText) ||
             booking.booking_id?.toLowerCase().includes(searchText) ||
             booking.customer_name?.toLowerCase().includes(searchText) ||
-            booking.customer_contact?.toLowerCase().includes(searchText),
+            booking.customer_contact?.toLowerCase().includes(searchText) ||
+            String(booking.room_number || "").toLowerCase().includes(searchText),
         );
       }
 
@@ -137,6 +144,15 @@ export default function Booking() {
     }
   };
 
+  const handleCheckoutComplete = (id) => {
+    setBookings((prev) =>
+      prev.map((booking) =>
+        booking.id === id ? { ...booking, status: "Checked-out" } : booking,
+      ),
+    );
+    navigate("/billing");
+  };
+
 
   /* ================= UI ================= */  return (
     <Container>
@@ -147,7 +163,7 @@ export default function Booking() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Search bookings..."
+            placeholder="Search by guest, phone, booking ID, or room no..."
             className="w-full md:w-72"
           />
 
@@ -173,6 +189,7 @@ export default function Booking() {
         loading={loading || searchLoading}
         onDelete={handleDelete}
         onStatusUpdate={handleStatusUpdate}
+        onCheckoutComplete={handleCheckoutComplete}
         onEdit={(booking) => {
           setEditingBooking(booking);
           setModalOpen(true);

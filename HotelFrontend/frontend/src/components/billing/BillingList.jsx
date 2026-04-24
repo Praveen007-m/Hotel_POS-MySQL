@@ -22,12 +22,9 @@ const BillingList = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedBill, setSelectedBill] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [rowGstStatus, setRowGstStatus] = useState({});
-  const [autoView, setAutoView] = useState(false);
-
-  const [gstIncluded, setGstIncluded] = useState(true);
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
   const [availableAddOns, setAvailableAddOns] = useState([]);
-  const [menuItems, setMenuItems] = useState([]);
 
   const [form, setForm] = useState({
     room_price: 0,
@@ -35,11 +32,6 @@ const BillingList = () => {
     kitchen_orders: [],
     discount: 0,
   });
-  const [hoveredRow, setHoveredRow] = useState(null);
-
-  const onGstChange = (included) => {
-  setGstIncluded(included);
-  };
 
   /* ================= FETCH BILLINGS ================= */
   const fetchBills = async () => {
@@ -75,16 +67,6 @@ const BillingList = () => {
       setAvailableAddOns(res.data || []);
     } catch (err) {
       console.error("Failed to fetch add-ons", err);
-    }
-  };
-
-  /* ================= FETCH KITCHEN ITEMS ================= */
-  const fetchKitchenMenu = async () => {
-    try {
-      const res = await axios.get(`${API_BASE_URL}/api/kitchen/items`);
-      setMenuItems(res.data || []);
-    } catch (err) {
-      console.error("Failed to fetch kitchen menu", err);
     }
   };
 
@@ -147,7 +129,6 @@ const BillingList = () => {
   useEffect(() => {
     fetchBills();
     fetchAddOns();
-    fetchKitchenMenu();
   }, []);
 
   /* ================= SEARCH (WITH LOADING) ================= */
@@ -187,12 +168,7 @@ const BillingList = () => {
     }));
   };
 
-  const handleViewPdf = (bill, gstStatus, directView = false) => {
-    setAutoView(!directView);
-    openModal(bill, gstStatus, directView);
-  };
-
-  const openModal = async (bill, gstStatus, directView = false) => {
+  const openModal = async (bill) => {
     if (!bill?.id) {
       toast.error("Invalid bill");
       return;
@@ -214,11 +190,6 @@ const BillingList = () => {
         discount: Number(res.data.discount || 0),
       });
 
-      setRowGstStatus((prev) => ({
-        ...prev,
-        [bill.id]: gstStatus,
-      }));
-      setGstIncluded(gstStatus === "With GST");
       setModalOpen(true);
     } catch (err) {
       console.error(err);
@@ -229,13 +200,34 @@ const BillingList = () => {
   /* ================= EXPORT CSV ================= */
   const handleExportCSV = async () => {
     try {
-      const token = localStorage.getItem("token");
+      if (
+        exportStartDate &&
+        exportEndDate &&
+        new Date(exportStartDate) > new Date(exportEndDate)
+      ) {
+        toast.error("Export start date cannot be after end date");
+        return;
+      }
 
-      const response = await fetch(`${API_BASE_URL}/api/billings/export/csv`, {
+      const token = localStorage.getItem("token");
+      const params = new URLSearchParams();
+
+      if (exportStartDate) params.set("startDate", exportStartDate);
+      if (exportEndDate) params.set("endDate", exportEndDate);
+
+      const exportUrl = params.toString()
+        ? `${API_BASE_URL}/api/billings/export/csv?${params.toString()}`
+        : `${API_BASE_URL}/api/billings/export/csv`;
+
+      const response = await fetch(exportUrl, {
         headers: {
-          Authorization: `Bearer ${token}`, // if protected
+          Authorization: `Bearer ${token}`,
         },
       });
+
+      if (!response.ok) {
+        throw new Error("Export request failed");
+      }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -270,14 +262,27 @@ const BillingList = () => {
         </h1>
 
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-[#0F172A] text-white border border-[#1E293B] rounded-lg shadow-md hover:bg-[#020617] hover:border-cyan-400 hover:shadow-cyan-500/20 transition-all duration-200 w-full sm:w-auto"
-          >
-            <Download size={16} />
-            <span className="text-sm font-medium">Export CSV</span>
-          </button>
-
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            <input
+              type="date"
+              value={exportStartDate}
+              onChange={(e) => setExportStartDate(e.target.value)}
+              className="w-full sm:w-auto rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+            <input
+              type="date"
+              value={exportEndDate}
+              onChange={(e) => setExportEndDate(e.target.value)}
+              className="w-full sm:w-auto rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-[#0F172A] text-white border border-[#1E293B] rounded-lg shadow-md hover:bg-[#020617] hover:border-cyan-400 hover:shadow-cyan-500/20 transition-all duration-200 w-full sm:w-auto"
+            >
+              <Download size={16} />
+              <span className="text-sm font-medium">Export CSV</span>
+            </button>
+          </div>
           <SearchInput
             value={search}
             onChange={setSearch}
@@ -295,13 +300,7 @@ const BillingList = () => {
             billings={paginatedBills}
             onOpen={openModal}
             onDelete={handleDeleteBill}
-            rowGstStatus={rowGstStatus}
-        onGstStatusChange={(billId, status) =>
-          setRowGstStatus((prev) => ({ ...prev, [billId]: status }))
-        }
-        hoveredRow={hoveredRow}
             onMarkDownloaded={handleMarkDownloaded}
-            onView={handleViewPdf}
           />
 
           {totalPages > 1 && (
@@ -319,17 +318,11 @@ const BillingList = () => {
         open={modalOpen}
         onClose={() => {
           setModalOpen(false);
-          setAutoView(false);
         }}
-        autoView={autoView}
         selectedBill={selectedBill}
         form={form}
         setForm={setForm}
-        gstIncluded={gstIncluded}
-        setGstIncluded={setGstIncluded}
-        onGstChange={onGstChange}
         availableAddOns={availableAddOns}
-        menuItems={menuItems}
         onDownload={handleMarkDownloaded}
       />
     </div>

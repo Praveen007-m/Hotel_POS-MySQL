@@ -10,8 +10,7 @@ const formatBillDate = (dateStr) => {
 };
 
 /* ================= THREE DOTS MENU ================= */
-const ActionsMenu = ({ bill, gstStatus, onOpen, onDelete, downloaded, onMarkDownloaded, onView }) => {
-console.log(`ActionsMenu for #${bill.id}: downloaded=${downloaded}`);
+const ActionsMenu = ({ bill, onOpen, onDelete, downloaded, onMarkDownloaded }) => {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef(null);
@@ -52,7 +51,7 @@ console.log(`ActionsMenu for #${bill.id}: downloaded=${downloaded}`);
 
   const handleGenerate = () => {
     setOpen(false);
-    onOpen(bill, gstStatus);
+    onOpen(bill);
     onMarkDownloaded(bill.id);
   };
 
@@ -106,29 +105,24 @@ console.log(`ActionsMenu for #${bill.id}: downloaded=${downloaded}`);
                 </span>
               </button>
 
-              {/* Delete — only when Without GST */}
-              {gstStatus === "Without GST" && (
-                <>
-                  <div className="my-1 border-t border-gray-100" />
-                  <button
-                    onClick={() => {
-                      setOpen(false);
-                      if (!window.confirm(`Delete bill #${bill.id}?`)) return;
-                      onDelete(bill.id);
-                    }}
-                    className="group flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors"
-                  >
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-500 group-hover:bg-red-200 transition-colors shrink-0">
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </span>
-                    <span className="font-medium">Delete Bill</span>
-                  </button>
-                </>
-              )}
+              <div className="my-1 border-t border-gray-100" />
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  if (!window.confirm(`Delete bill #${bill.id}?`)) return;
+                  onDelete(bill.id);
+                }}
+                className="group flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-500 group-hover:bg-red-200 transition-colors shrink-0">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                </span>
+                <span className="font-medium">Delete Bill</span>
+              </button>
             </div>
           </div>
         </div>
@@ -137,30 +131,8 @@ console.log(`ActionsMenu for #${bill.id}: downloaded=${downloaded}`);
   );
 };
 
-/* ================= GST BADGE SELECT ================= */
-const GstSelect = ({ value, onChange }) => (
-  <div className="relative inline-block">
-    <select
-      value={value}
-      onChange={onChange}
-      className={`appearance-none cursor-pointer pl-2 pr-6 py-1 text-[11px] font-semibold rounded-full border transition-all outline-none focus:ring-2 focus:ring-offset-1 ${value === "With GST"
-        ? "bg-emerald-50 text-emerald-700 border-emerald-200 focus:ring-emerald-300"
-        : "bg-amber-50 text-amber-700 border-amber-200 focus:ring-amber-300"
-        }`}
-    >
-      <option value="With GST">With GST</option>
-      <option value="Without GST">Without GST</option>
-    </select>
-    <div className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center">
-      <svg className="w-2.5 h-2.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-      </svg>
-    </div>
-  </div>
-);
-
 /* ================= BILLING TABLE ================= */
-const BillingTable = ({ billings = [], onOpen, onDelete, rowGstStatus = {}, onGstStatusChange, onMarkDownloaded, onView }) => {
+const BillingTable = ({ billings = [], onOpen, onDelete, onMarkDownloaded }) => {
   const [hoveredRow, setHoveredRow] = useState(null);
 
   if (!onOpen || typeof onOpen !== "function") {
@@ -219,7 +191,6 @@ const BillingTable = ({ billings = [], onOpen, onDelete, rowGstStatus = {}, onGs
                 <th className="px-3 py-3 text-left hidden lg:table-cell">Advance</th>
                 <th className="px-3 py-3 text-left hidden lg:table-cell">Billed By</th>
                 <th className="px-3 py-3 text-left w-[90px]">Total</th>
-                <th className="px-3 py-3 text-left w-[100px]">GST</th>
                 <th className="px-3 py-3 text-center w-[60px]">Actions</th>
               </tr>
             </thead>
@@ -350,24 +321,14 @@ const BillingTable = ({ billings = [], onOpen, onDelete, rowGstStatus = {}, onGs
                       </div>
                     </td>
 
-                    {/* GST */}
-                    <td className="px-3 py-3">
-                      <GstSelect
-                        value={rowGstStatus[b.id] || "With GST"}
-                        onChange={(e) => onGstStatusChange(b.id, e.target.value)}
-                      />
-                    </td>
-
                     {/* Actions */}
                     <td className="px-3 py-3">
                       <ActionsMenu
                         bill={b}
-                        gstStatus={rowGstStatus[b.id] || "With GST"}
                         onOpen={onOpen}
                         onDelete={onDelete}
                         downloaded={isDownloaded}
                         onMarkDownloaded={onMarkDownloaded}
-                        onView={onView}
                       />
                     </td>
                   </tr>

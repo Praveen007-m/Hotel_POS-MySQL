@@ -2,7 +2,6 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db/database");
 const { Parser } = require("json2csv");
-const ExcelJS = require("exceljs");
 const billingController = require("../controllers/profitController");
 
 /* ===============================
@@ -132,11 +131,23 @@ router.patch("/:id/downloaded", async (req, res) => {
 });
 
 router.get("/export/csv", async (req, res) => {
-  /*
-    Simple billing export with columns: ID, Invoice No., Name, Guest GST No.,
-    Room description, HSN Code Hotel, Room price.
-    Output remains an Excel file with header styling.
-  */
+  const { startDate, endDate } = req.query;
+  const where = [];
+  const params = [];
+
+  if (startDate && endDate) {
+    where.push("DATE(b.created_at) BETWEEN ? AND ?");
+    params.push(startDate, endDate);
+  } else if (startDate) {
+    where.push("DATE(b.created_at) >= ?");
+    params.push(startDate);
+  } else if (endDate) {
+    where.push("DATE(b.created_at) <= ?");
+    params.push(endDate);
+  }
+
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
   const sql = `
     SELECT
       b.id AS id,
@@ -146,107 +157,84 @@ router.get("/export/csv", async (req, res) => {
         CONCAT(r_live.room_number, ' / ', r_live.category),
         CONCAT(r_stale.room_number, ' / ', r_stale.category)
       ) AS room_description,
-      b.total_amount AS room_price
+      COALESCE(room_lines.room_tariff, 0) AS tariff_price,
+      COALESCE(room_lines.room_gst, 0) AS tariff_gst
     FROM billings b
     LEFT JOIN bookings bk ON bk.booking_id = b.booking_id
     LEFT JOIN rooms r_live ON r_live.id = bk.room_id
     LEFT JOIN rooms r_stale ON r_stale.id = b.room_id
     LEFT JOIN customers c ON c.id = b.customer_id
+    LEFT JOIN (
+      SELECT
+        billing_id,
+        ROUND(SUM(subtotal), 2) AS room_tariff,
+        ROUND(SUM(subtotal * gst_rate), 2) AS room_gst
+      FROM invoices
+      WHERE type = 'room'
+      GROUP BY billing_id
+    ) room_lines ON room_lines.billing_id = b.id
+    ${whereClause}
     ORDER BY b.created_at DESC
   `;
 
   try {
-    const [rows] = await db.query(sql);
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Billing Statements");
+    const [rows] = await db.query(sql, params);
 
-      // header row with requested columns
-      const headerRow = worksheet.addRow([
-        "ID",
-        "Invoice No.",
-        "Name",
-        "Guest GST No.",
-        "Room description",
-        "HSN Code Hotel",
-        "Room price",
-      ]);
-      headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
-      headerRow.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FF1F4E78" },
-      };
-      headerRow.alignment = { horizontal: "center", vertical: "center" };
+    const csvRows = rows.map((row) => ({
+      id: row.id,
+      invoiceNo: `INV-${String(row.id).padStart(6, "0")}`,
+      name: row.customer_name || "",
+      guestGstNo: row.gst_number || "",
+      roomDescription: row.room_description || "",
+      hsnCodeHotel: "",
+      tariffPrice: Number(row.tariff_price || 0).toFixed(2),
+      tariffGst: Number(row.tariff_gst || 0).toFixed(2),
+    }));
 
-      worksheet.getColumn(1).width = 6;
-      worksheet.getColumn(2).width = 15;
-      worksheet.getColumn(3).width = 20;
-      worksheet.getColumn(4).width = 18;
-      worksheet.getColumn(5).width = 20;
-      worksheet.getColumn(6).width = 15;
-      worksheet.getColumn(7).width = 15;
+    const totals = csvRows.reduce(
+      (sum, row) => ({
+        tariffPrice: sum.tariffPrice + Number(row.tariffPrice || 0),
+        tariffGst: sum.tariffGst + Number(row.tariffGst || 0),
+      }),
+      { tariffPrice: 0, tariffGst: 0 }
+    );
 
-      // populate rows and keep a running total of room prices
-      let totalRoomPrice = 0;
-      rows.forEach((row) => {
-        const invoiceNo = `INV-${String(row.id).padStart(6, "0")}`;
-        const price = parseFloat(row.room_price) || 0;
-        worksheet.addRow([
-          row.id,
-          invoiceNo,
-          row.customer_name || "",
-          row.gst_number || "",
-          row.room_description || "",
-          "", // empty HSN Code Hotel
-          price,
-        ]);
-        totalRoomPrice += price;
-      });
+    csvRows.push({
+      id: "",
+      invoiceNo: "",
+      name: "",
+      guestGstNo: "",
+      roomDescription: "",
+      hsnCodeHotel: "Total",
+      tariffPrice: totals.tariffPrice.toFixed(2),
+      tariffGst: totals.tariffGst.toFixed(2),
+    });
 
-      // append blank line and total row
-      worksheet.addRow([]);
-      const totalRow = worksheet.addRow([
-        "",
-        "",
-        "",
-        "",
-        "",
-        "Total",
-        totalRoomPrice,
-      ]);
-      totalRow.font = { bold: true };
-      totalRow.alignment = { horizontal: "right", vertical: "center" };
+    const parser = new Parser({
+      fields: [
+        { label: "ID", value: "id" },
+        { label: "Invoice No.", value: "invoiceNo" },
+        { label: "Name", value: "name" },
+        { label: "Guest GST No.", value: "guestGstNo" },
+        { label: "Room Description", value: "roomDescription" },
+        { label: "HSN Code Hotel", value: "hsnCodeHotel" },
+        { label: "Tariff Price", value: "tariffPrice" },
+        { label: "Tariff GST", value: "tariffGst" },
+      ],
+    });
 
-      // alternate row coloring (exclude header and total row)
-      worksheet.eachRow((r, rowNumber) => {
-        if (rowNumber > 1 && rowNumber < totalRow.number) {
-          if (rowNumber % 2 === 0) {
-            r.fill = {
-              type: "pattern",
-              pattern: "solid",
-              fgColor: { argb: "FFF2F2F2" },
-            };
-          }
-          r.alignment = { horizontal: "left", vertical: "center" };
-        }
-      });
+    const csv = parser.parse(csvRows);
 
-      // headers for excel
-      res.setHeader(
-        "Content-Type",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      );
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=billing-statements.xlsx`,
-      );
-
-      await workbook.xlsx.write(res);
-      res.end();
-    } catch (error) {
-      console.error("Export error:", error);
-      res.status(500).json({ error: "Failed to generate export" });
-    }
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=billing-statements.csv"
+    );
+    res.status(200).send(`\uFEFF${csv}`);
+  } catch (error) {
+    console.error("Export error:", error);
+    res.status(500).json({ error: "Failed to generate export" });
+  }
 });
 
 module.exports = router;

@@ -1,121 +1,116 @@
 import { useEffect, useMemo, useState } from "react";
-import Container from "../components/layout/Container";
+import { ArrowDownRight, ArrowUpRight, Wallet } from "lucide-react";
+import StatCard from "../components/finance/StatCard";
 import useExpense from "../hooks/useExpense";
 import useProfit from "../hooks/useProfit";
-import StatCard from "../components/finance/StatCard";
-import { ArrowUpRight, ArrowDownRight, Wallet } from "lucide-react";
+import Container from "../components/layout/Container";
+
+const formatCurrency = (value) => {
+  const amount = Number(value || 0);
+
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+};
 
 const FinanceOverview = () => {
   const { expenses, getExpenses } = useExpense();
   const { profit, loading: profitLoading, getProfit } = useProfit();
-
   const [activeFilter, setActiveFilter] = useState("all");
 
-  /* ================= LOAD DATA (FILTER-AWARE) ================= */
   useEffect(() => {
     getExpenses(activeFilter);
     getProfit(activeFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilter]);
 
-  /* ================= CALCULATIONS ================= */
-  const totalExpenses = useMemo(() => {
-    return expenses.reduce(
-      (sum, e) => sum + Number(e.amount || 0),
-      0
-    );
-  }, [expenses]);
+  const totalExpenses = useMemo(
+    () => expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+    [expenses]
+  );
 
   const netBalance = profit - totalExpenses;
   const isPositive = netBalance >= 0;
 
-  /* ================= UI ================= */
   return (
     <Container>
       <div className="space-y-10">
-
-        {/* HEADER */}
         <div>
-          <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
+          <h1 className="text-4xl font-bold tracking-tight text-gray-900">
             Finance Overview
           </h1>
-          <p className="text-gray-500 mt-2">
-            A clear snapshot of your hotel’s financial health
+          <p className="mt-2 text-gray-500">
+            A clear snapshot of your hotel's financial health
           </p>
         </div>
 
-        {/* 🔥 FILTER BUTTONS (HERE THEY ARE) */}
         <div className="flex flex-wrap gap-2">
           {["all", "today", "week", "month"].map((filter) => (
             <button
               key={filter}
               onClick={() => setActiveFilter(filter)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition
-                ${activeFilter === filter
+              className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
+                activeFilter === filter
                   ? "bg-[#09172A] text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
+              }`}
             >
               {filter.toUpperCase()}
             </button>
           ))}
         </div>
 
-        {/* STATS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-
-          {/* PROFIT */}
-          <div className="bg-gradient-to-br from-green-50 to-white rounded-2xl shadow-md p-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="rounded-2xl bg-gradient-to-br from-green-50 to-white p-6 shadow-md">
             <StatCard
               label="Total Income"
-              value={profitLoading ? "—" : `₹ ${profit}`}
-              color="text-green-700"
+              value={profitLoading ? "Loading..." : formatCurrency(profit)}
+              color="green"
               icon={
-                <div className="p-3 bg-green-100 rounded-xl">
-                  <ArrowUpRight className="w-7 h-7 text-green-600" />
+                <div className="rounded-xl bg-green-100 p-3">
+                  <ArrowUpRight className="h-7 w-7 text-green-600" />
                 </div>
               }
             />
           </div>
 
-          {/* EXPENSE */}
-          <div className="bg-gradient-to-br from-red-50 to-white rounded-2xl shadow-md p-6">
+          <div className="rounded-2xl bg-gradient-to-br from-red-50 to-white p-6 shadow-md">
             <StatCard
               label="Total Expenses"
-              value={`₹ ${totalExpenses}`}
-              color="text-red-700"
+              value={formatCurrency(totalExpenses)}
+              color="red"
               icon={
-                <div className="p-3 bg-red-100 rounded-xl">
-                  <ArrowDownRight className="w-7 h-7 text-red-600" />
+                <div className="rounded-xl bg-red-100 p-3">
+                  <ArrowDownRight className="h-7 w-7 text-red-600" />
                 </div>
               }
             />
           </div>
 
-          {/* NET BALANCE */}
           <div
-            className={`rounded-2xl shadow-md p-6
-              ${isPositive
+            className={`rounded-2xl p-6 shadow-md ${
+              isPositive
                 ? "bg-gradient-to-br from-blue-50 to-white"
                 : "bg-gradient-to-br from-orange-50 to-white"
-              }`}
+            }`}
           >
             <StatCard
               label="Total Profit"
-              value={`₹ ${netBalance}`}
-              color={isPositive ? "text-blue-700" : "text-orange-700"}
+              value={formatCurrency(netBalance)}
+              color={isPositive ? "blue" : "yellow"}
               icon={
                 <div
-                  className={`p-3 rounded-xl ${isPositive
-                      ? "bg-blue-100"
-                      : "bg-orange-100"
-                    }`}
+                  className={`rounded-xl p-3 ${
+                    isPositive ? "bg-blue-100" : "bg-orange-100"
+                  }`}
                 >
                   <Wallet
-                    className={`w-7 h-7 ${isPositive
-                        ? "text-blue-600"
-                        : "text-orange-600"
-                      }`}
+                    className={`h-7 w-7 ${
+                      isPositive ? "text-blue-600" : "text-orange-600"
+                    }`}
                   />
                 </div>
               }
@@ -123,11 +118,10 @@ const FinanceOverview = () => {
           </div>
         </div>
 
-        {/* FOOTER */}
-        <div className="text-sm text-gray-500 text-center">
-          Showing data for: <span className="font-medium">{activeFilter.toUpperCase()}</span>
+        <div className="text-center text-sm text-gray-500">
+          Showing data for:{" "}
+          <span className="font-medium">{activeFilter.toUpperCase()}</span>
         </div>
-
       </div>
     </Container>
   );

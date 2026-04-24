@@ -1,17 +1,24 @@
+const FILTER_OPTIONS = [
+  { value: "all", label: "ALL" },
+  { value: "today", label: "TODAY" },
+  { value: "week", label: "LAST 7 DAYS" },
+  { value: "month", label: "MONTH" },
+];
+
 const ExpenseFilters = ({ activeFilter, onChange }) => {
   return (
     <div className="flex flex-wrap gap-2">
-      {["all", "today", "This week", "month"].map((filter) => (
+      {FILTER_OPTIONS.map((filter) => (
         <button
-          key={filter}
-          onClick={() => onChange(filter)}
+          key={filter.value}
+          onClick={() => onChange(filter.value)}
           className={`px-3 py-1 rounded-lg text-sm font-semibold transition
-            ${activeFilter === filter
+            ${activeFilter === filter.value
               ? "bg-[#09172A] text-white"
               : "bg-gray-100 hover:bg-gray-200"
             }`}
         >
-          {filter.toUpperCase()}
+          {filter.label}
         </button>
       ))}
     </div>

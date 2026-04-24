@@ -1,5 +1,18 @@
 const db = require("../db/database");
 
+const buildExpenseFilterClause = (filter) => {
+  switch (filter) {
+    case "today":
+      return "WHERE expense_date = CURDATE()";
+    case "week":
+      return "WHERE expense_date BETWEEN DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND CURDATE()";
+    case "month":
+      return "WHERE YEAR(expense_date) = YEAR(CURDATE()) AND MONTH(expense_date) = MONTH(CURDATE())";
+    default:
+      return "";
+  }
+};
+
 /* ================= ADD EXPENSE ================= */
 exports.createExpense = (req, res) => {
   const { title, amount, category, expense_date } = req.body;
@@ -33,25 +46,12 @@ exports.createExpense = (req, res) => {
 
 
 exports.getExpenses = (req, res) => {
-  const { filter } = req.query;
+  const { filter = "all" } = req.query;
 
   let query = `SELECT * FROM expenses`;
   let params = [];
 
-  if (filter === "today") {
-    query += ` WHERE date(expense_date) = date('now')`;
-  } 
-  else if (filter === "week") {
-    query += `
-      WHERE date(expense_date) >= date('now', '-6 days')
-      AND date(expense_date) <= date('now')
-    `;
-  } 
-  else if (filter === "month") {
-    query += `
-      WHERE strftime('%Y-%m', expense_date) = strftime('%Y-%m', 'now')
-    `;
-  }
+  query += ` ${buildExpenseFilterClause(filter)}`;
 
   query += ` ORDER BY expense_date DESC`;
 
