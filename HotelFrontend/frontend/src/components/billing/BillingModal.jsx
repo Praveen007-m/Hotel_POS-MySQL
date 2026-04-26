@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "react-toastify";
+import auth from "../../auth/axiosInstance";
 import { DEFAULT_GST_RATES, formatIST } from "../../utils/billingUtils";
 import { generateInvoicePDF } from "../../utils/invoicePdf.jsx";
 
@@ -14,19 +16,19 @@ const BillingModal = ({
   form,
   setForm,
   availableAddOns = [],
-  onDownload,
+  onDeleteComplete,
 }) => {
   const [isOpen, setOpen] = useState(false);
   const [gstNumber, setGstNumber] = useState("");
   const [guestDiscount, setGuestDiscount] = useState(0);
-  const [isBillGenerated, setIsBillGenerated] = useState(false);
+  const [gstMode, setGstMode] = useState("with");
 
   useEffect(() => {
     if (open) {
       setGstNumber(selectedBill?.gst_number || "");
       setGuestDiscount(0);
+      setGstMode("with");
       setOpen(false);
-      setIsBillGenerated(true);
     }
   }, [open, selectedBill]);
 
@@ -93,20 +95,17 @@ const BillingModal = ({
     kitchen: Number(
       selectedBill?.totals?.gst_rates?.kitchen ?? DEFAULT_GST_RATES.kitchen
     ),
-    addon: Number(
-      selectedBill?.totals?.gst_rates?.addon ?? DEFAULT_GST_RATES.addon
-    ),
   };
 
+  const isWithGST = gstMode === "with";
   const subtotal = roomCharges + kitchenCharges + addOnsTotal;
-  const roomGst = isBillGenerated ? roomCharges * safeGst.room : 0;
-  const kitchenGst = isBillGenerated ? kitchenCharges * safeGst.kitchen : 0;
-  const addOnsGst = 0;
-  const totalGst = roomGst + kitchenGst + addOnsGst;
+  const roomGst = isWithGST ? roomCharges * safeGst.room : 0;
+  const kitchenGst = isWithGST ? kitchenCharges * safeGst.kitchen : 0;
+  const totalGst = roomGst + kitchenGst;
   const subtotalWithGst = subtotal + totalGst;
   const appliedDiscount =
     Number(safeForm.discount || 0) + Number(guestDiscount || 0);
-  const totalAmount = isBillGenerated ? subtotalWithGst : subtotal;
+  const totalAmount = isWithGST ? subtotalWithGst : subtotal;
   const advancePaid = Number(selectedBill.advance_paid || 0);
   const balanceAmount = Number(
     (totalAmount - appliedDiscount - advancePaid).toFixed(2)
@@ -128,6 +127,23 @@ const BillingModal = ({
 
   const removeAddOn = (index) =>
     setForm({ ...form, add_ons: form.add_ons.filter((_, i) => i !== index) });
+
+  const handleDeleteBill = async (id) => {
+    if (!id) {
+      toast.error("Invalid bill ID");
+      return;
+    }
+
+    try {
+      await auth.delete(`/billings/${id}`);
+      toast.success("Bill deleted");
+      onDeleteComplete?.(id);
+      onClose();
+    } catch (err) {
+      console.error("Delete failed", err);
+      toast.error("Failed to delete bill");
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4 overflow-auto">
@@ -193,7 +209,7 @@ const BillingModal = ({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4 p-3 bg-white rounded-lg border border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-3 bg-white rounded-lg border border-gray-200">
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-700">
                 Room Charges
@@ -204,6 +220,19 @@ const BillingModal = ({
                 readOnly
                 className="w-full border rounded-lg p-2 text-sm bg-gray-100 cursor-not-allowed"
               />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">
+                GST Mode
+              </label>
+              <select
+                value={gstMode}
+                onChange={(e) => setGstMode(e.target.value)}
+                className="w-full border rounded-lg p-2 text-sm bg-white"
+              >
+                <option value="with">With GST</option>
+                <option value="without">Without GST</option>
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-700">
@@ -223,7 +252,7 @@ const BillingModal = ({
             </div>
           </div>
 
-          {isBillGenerated && (
+          {isWithGST && (
             <div className="flex items-center gap-4 p-3 bg-white rounded-lg border border-gray-200">
               <span className="text-sm font-medium">GST applied to final bill</span>
               <span className="text-xs text-gray-600">
@@ -355,7 +384,7 @@ const BillingModal = ({
             )}
 
             <p><b>Subtotal:</b> Rs{subtotal.toFixed(2)}</p>
-            {isBillGenerated && (
+            {isWithGST && (
               <>
                 {roomGst > 0 && (
                   <p><b>Room GST ({roomGstPercent}%):</b> Rs{roomGst.toFixed(2)}</p>
@@ -370,7 +399,7 @@ const BillingModal = ({
             <hr className="my-2 border-gray-300" />
 
             <p className="flex justify-between">
-              <span><b>{isBillGenerated ? "Total Amount (Incl. GST):" : "Total Amount:"}</b></span>
+              <span><b>{isWithGST ? "Total Amount (Incl. GST):" : "Total Amount:"}</b></span>
               <span>Rs{totalAmount.toFixed(2)}</span>
             </p>
 
@@ -400,7 +429,7 @@ const BillingModal = ({
                 generateInvoicePDF({
                   selectedBill,
                   form,
-                  gstIncluded: true,
+                  gstIncluded: isWithGST,
                   gstNumber,
                   gstRates: {
                     room: safeGst.room,
@@ -413,7 +442,7 @@ const BillingModal = ({
                     addon: 0,
                   },
                   subtotal,
-                  subtotalWithGst,
+                  subtotalWithGst: isWithGST ? subtotalWithGst : subtotal,
                   totalAmount,
                   advancePaid,
                   balanceAmount,
@@ -421,11 +450,6 @@ const BillingModal = ({
                   formatIST,
                   action: "download",
                 });
-
-                const billId = selectedBill.id;
-                if (onDownload && billId) {
-                  onDownload(billId, gstNumber || "");
-                }
               }}
               className="flex items-center justify-center gap-2 w-full py-2 bg-[#0A1A2F] hover:bg-[#14273F] text-white rounded-lg font-medium text-sm transition-all active:scale-95"
             >
@@ -439,6 +463,15 @@ const BillingModal = ({
               </svg>
               Download PDF File
             </button>
+
+            {gstMode === "without" && (
+              <button
+                onClick={() => handleDeleteBill(selectedBill.id)}
+                className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm transition-all active:scale-95"
+              >
+                Delete Bill
+              </button>
+            )}
           </div>
         </div>
       </div>

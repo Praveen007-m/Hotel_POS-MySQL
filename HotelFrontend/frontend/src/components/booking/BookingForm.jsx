@@ -1,169 +1,96 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { API_BASE_URL } from "../../config";
 import { toast } from "react-toastify";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, ChevronDown, Search, X } from "lucide-react";
 import CustomerForm from "../customers/CustomerForm";
 
-// ─────────────────────────────────────────────────────────────
-// DATE HELPERS  (pure string — zero Date() construction)
-// ─────────────────────────────────────────────────────────────
+// DATE HELPERS (pure string; no Date parsing from DB/user strings)
 
-/** Zero-pad a number to 2 digits */
 const pad = (n) => String(n).padStart(2, "0");
 
-/**
- * Returns today's date parts using the LOCAL wall clock.
- * We read from Date only to get year/month/day/hour/min — we never
- * let the Date object reinterpret a string from the DB or the user.
- */
 const localNow = () => {
-  const d = new Date(); // safe: no string passed in → no timezone shift
+  const d = new Date();
   return {
     year: d.getFullYear(),
-    month: d.getMonth() + 1, // 1-based
+    month: d.getMonth() + 1,
     day: d.getDate(),
     hours: d.getHours(),
     minutes: d.getMinutes(),
   };
 };
 
-/**
- * Build "YYYY-MM-DDThh:mm" from individual parts.
- * Used only when we construct default check-in/out times from today's date.
- */
 const buildDateTimeLocal = (year, month, day, hours, minutes) =>
   `${year}-${pad(month)}-${pad(day)}T${pad(hours)}:${pad(minutes)}`;
 
-/**
- * Convert a DB datetime string "YYYY-MM-DD HH:mm:ss" (or "YYYY-MM-DD HH:mm")
- * to the datetime-local input format "YYYY-MM-DDThh:mm".
- * Pure string manipulation — no Date() construction at all.
- */
 const dbToInputFormat = (dbString) => {
   if (!dbString) return "";
-  // Support both "YYYY-MM-DD HH:mm:ss" and "YYYY-MM-DD HH:mm"
   const [datePart, timePart] = dbString.split(" ");
   if (!datePart || !timePart) return "";
-  const hhmm = timePart.slice(0, 5); // "HH:mm"
-  return `${datePart}T${hhmm}`;       // "YYYY-MM-DDThh:mm"
+  return `${datePart}T${timePart.slice(0, 5)}`;
 };
 
-/**
- * Convert "YYYY-MM-DDThh:mm" (datetime-local value) back to
- * "YYYY-MM-DD HH:mm:ss" for the API payload.
- * Pure string — no Date() construction.
- */
 const inputToDbFormat = (inputValue) => {
   if (!inputValue) return null;
-  // inputValue is "YYYY-MM-DDThh:mm"
-  return inputValue.replace("T", " ") + ":00";
+  return `${inputValue.replace("T", " ")}:00`;
 };
 
-/**
- * Compute default check-in / check-out strings for a clicked calendar date.
- *
- * `clickedDate` is whatever FullCalendar / the calendar widget gives us.
- *  - If it is a plain "YYYY-MM-DD" string  → use it directly.
- *  - If it is a Date object (unavoidable from the calendar library)
- *    → read LOCAL year/month/day so no UTC shift occurs.
- *
- * Default times: check-in 13:00, check-out 11:00 next day.
- */
 const getDefaultDateTimes = (clickedDate) => {
-  let year, month, day;
+  let year;
+  let month;
+  let day;
 
   if (!clickedDate) {
-    // No date passed — fall back to today (local wall clock)
-    const n = localNow();
-    year = n.year;
-    month = n.month;
-    day = n.day;
+    const now = localNow();
+    year = now.year;
+    month = now.month;
+    day = now.day;
   } else if (typeof clickedDate === "string") {
-    // "YYYY-MM-DD" — split directly, never pass to new Date()
-    const [y, m, d] = clickedDate.split("-").map(Number);
-    year = y;
-    month = m;
-    day = d;
+    [year, month, day] = clickedDate.split("-").map(Number);
   } else {
-    // Date object from calendar library — read LOCAL parts only
     year = clickedDate.getFullYear();
     month = clickedDate.getMonth() + 1;
     day = clickedDate.getDate();
   }
 
   const checkIn = buildDateTimeLocal(year, month, day, 13, 0);
-
-  // Next day for check-out — increment day safely
-  let coYear = year;
-  let coMonth = month;
-  let coDay = day + 1;
-
-  // Simple day overflow: delegate only the carry to a Date object
-  // constructed from NUMBERS (not strings) — this is safe because
-  // Date(year, month-1, day) uses LOCAL time, no UTC conversion.
   const nextDay = new Date(year, month - 1, day + 1);
-  coYear = nextDay.getFullYear();
-  coMonth = nextDay.getMonth() + 1;
-  coDay = nextDay.getDate();
-
-  const checkOut = buildDateTimeLocal(coYear, coMonth, coDay, 11, 0);
+  const checkOut = buildDateTimeLocal(
+    nextDay.getFullYear(),
+    nextDay.getMonth() + 1,
+    nextDay.getDate(),
+    11,
+    0
+  );
 
   return { check_in: checkIn, check_out: checkOut };
 };
 
-// ─────────────────────────────────────────────────────────────
 // STRING-BASED CONFLICT DETECTION
-// ─────────────────────────────────────────────────────────────
 
-/**
- * Normalise any datetime value to the comparable string "YYYY-MM-DD HH:mm".
- * Accepts:
- *   "YYYY-MM-DD HH:mm:ss"   → "YYYY-MM-DD HH:mm"
- *   "YYYY-MM-DDThh:mm"      → "YYYY-MM-DD HH:mm"
- *   "YYYY-MM-DD HH:mm"      → unchanged
- * Returns "" for falsy input.
- */
 const normaliseDateStr = (value) => {
   if (!value) return "";
-  // Replace T separator, then take first 16 chars → "YYYY-MM-DD HH:mm"
   return value.replace("T", " ").slice(0, 16);
 };
 
-/**
- * Adds one day to a "YYYY-MM-DD HH:mm" string without Date() string parsing.
- * Used ONLY to synthesise a fallback check-out when a booking has none.
- */
 const addOneDayToStr = (dateTimeStr) => {
   if (!dateTimeStr) return "";
   const [datePart, timePart] = dateTimeStr.split(" ");
   const [y, m, d] = datePart.split("-").map(Number);
-  // Safe: constructed from numbers, uses local time
   const next = new Date(y, m - 1, d + 1);
   return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())} ${timePart}`;
 };
 
-/**
- * Pure string comparison overlap check.
- * Two intervals [aStart, aEnd) and [bStart, bEnd) overlap when:
- *   aStart < bEnd  AND  aEnd > bStart
- * String comparison works correctly for "YYYY-MM-DD HH:mm" format.
- */
 const intervalsOverlap = (aStart, aEnd, bStart, bEnd) =>
   aStart < bEnd && aEnd > bStart;
 
-// ─────────────────────────────────────────────────────────────
 // DISPLAY HELPER
-// ─────────────────────────────────────────────────────────────
 
-/**
- * Format "YYYY-MM-DD HH:mm" to a readable "DD MMM YYYY" for warning messages.
- * Pure string — no Date() construction.
- */
 const MONTHS = [
-  "Jan","Feb","Mar","Apr","May","Jun",
-  "Jul","Aug","Sep","Oct","Nov","Dec",
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
 const friendlyDate = (normStr) => {
   if (!normStr) return "";
   const [datePart] = normStr.split(" ");
@@ -171,9 +98,180 @@ const friendlyDate = (normStr) => {
   return `${pad(d)} ${MONTHS[m - 1]} ${y}`;
 };
 
-// ─────────────────────────────────────────────────────────────
-// COMPONENT
-// ─────────────────────────────────────────────────────────────
+// ─── Searchable Customer Dropdown ───────────────────────────────────────────
+
+function CustomerDropdown({
+  customers,
+  value,
+  onChange,
+  onAddNew,
+  getCustomerPhone,
+  formatCustomerLabel,
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  const selected = customers.find((c) => Number(c.id) === Number(value));
+
+  const filtered = customers.filter((c) => {
+    const term = search.trim().toLowerCase();
+    if (!term) return true;
+    const name = String(c?.name || "").toLowerCase();
+    const phone = String(getCustomerPhone(c));
+    return name.includes(term) || phone.includes(term);
+  });
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (!containerRef.current?.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Focus search when opened
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    } else {
+      setSearch("");
+    }
+  }, [open]);
+
+  const handleSelect = (customer) => {
+    onChange(customer);
+    setOpen(false);
+  };
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    onChange(null);
+    setOpen(false);
+  };
+
+  return (
+    <div className="flex items-stretch gap-2">
+      {/* Dropdown trigger */}
+      <div className="relative flex-1" ref={containerRef}>
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className={`min-h-11 w-full rounded-xl border px-3 py-2 text-left text-sm transition-all duration-200 ease-out focus:outline-none focus:ring-2 focus:ring-blue-100 flex items-center justify-between gap-2 ${
+            open
+              ? "border-[#0A1B4D] ring-2 ring-blue-100"
+              : "border-gray-300 hover:border-gray-400"
+          } bg-white`}
+        >
+          {selected ? (
+            <span className="flex-1 truncate text-gray-800">
+              {formatCustomerLabel(selected)}
+            </span>
+          ) : (
+            <span className="flex-1 truncate text-gray-400">
+              Select customer
+            </span>
+          )}
+
+          <span className="flex items-center gap-1 shrink-0">
+            {selected && (
+              <span
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === "Enter" && handleClear(e)}
+                onClick={handleClear}
+                className="inline-flex items-center justify-center rounded-full p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                title="Clear selection"
+              >
+                <X size={13} />
+              </span>
+            )}
+            <ChevronDown
+              size={15}
+              className={`text-gray-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+            />
+          </span>
+        </button>
+
+        {/* Dropdown panel */}
+        {open && (
+          <div className="absolute left-0 right-0 z-50 mt-1 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+            {/* Search input inside dropdown */}
+            <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2.5">
+              <Search size={14} className="shrink-0 text-gray-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name or phone…"
+                className="flex-1 bg-transparent text-sm text-gray-700 placeholder-gray-400 focus:outline-none"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
+            {/* Options list */}
+            <div className="max-h-48 overflow-y-auto">
+              {filtered.length > 0 ? (
+                filtered.map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    onClick={() => handleSelect(customer)}
+                    className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors ${
+                      Number(customer.id) === Number(value)
+                        ? "bg-[#0A1B4D] text-white"
+                        : "text-gray-700 hover:bg-blue-50"
+                    }`}
+                  >
+                    <span className="font-medium truncate">
+                      {customer.name || "Unknown Customer"}
+                    </span>
+                    <span
+                      className={`ml-4 shrink-0 text-xs ${
+                        Number(customer.id) === Number(value)
+                          ? "text-blue-200"
+                          : "text-gray-400"
+                      }`}
+                    >
+                      {getCustomerPhone(customer) || "N/A"}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-4 text-center text-sm text-gray-400">
+                  No customers found
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Add new customer button */}
+      <button
+        type="button"
+        onClick={onAddNew}
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0A1B4D] text-white shadow-sm transition-colors hover:bg-[#081341]"
+        title="Add New Customer"
+      >
+        <PlusCircle size={20} />
+      </button>
+    </div>
+  );
+}
+
+// ─── Main BookingForm ────────────────────────────────────────────────────────
 
 export default function BookingForm({
   initialData,
@@ -191,41 +289,44 @@ export default function BookingForm({
 
   const isEditing = Boolean(initialData);
 
-  // ── Initial form state ──────────────────────────────────────
   const [form, setForm] = useState(() => {
     if (initialData && initialData.check_in) {
-      // Parse add_ons if it's a JSON string from the DB
       let parsedAddOns = [];
       try {
-        parsedAddOns = typeof initialData.add_ons === "string" 
-          ? JSON.parse(initialData.add_ons) 
-          : (initialData.add_ons || []);
-      } catch (e) {
+        parsedAddOns =
+          typeof initialData.add_ons === "string"
+            ? JSON.parse(initialData.add_ons)
+            : initialData.add_ons || [];
+      } catch {
         parsedAddOns = [];
       }
 
-      // If add_ons is an array of objects [{description, amount}], convert to array of names for the toggle logic
-      const addonNames = Array.isArray(parsedAddOns) 
-        ? parsedAddOns.map(a => typeof a === 'string' ? a : (a.description || a.name))
+      const addonNames = Array.isArray(parsedAddOns)
+        ? parsedAddOns.map((addon) =>
+            typeof addon === "string" ? addon : addon.description || addon.name
+          )
         : [];
 
       return {
         ...initialData,
-        customer_id: initialData.customer_id !== undefined ? Number(initialData.customer_id) : "",
-        room_id: initialData.room_id !== undefined ? Number(initialData.room_id) : "",
-        // DB format → input format (pure string, no timezone shift)
+        customer_id:
+          initialData.customer_id !== undefined
+            ? Number(initialData.customer_id)
+            : "",
+        room_id:
+          initialData.room_id !== undefined ? Number(initialData.room_id) : "",
         check_in: dbToInputFormat(initialData.check_in),
         check_out: dbToInputFormat(initialData.check_out),
         price: Number(initialData.price) || "",
         advance_paid: Number(initialData.advance_paid) || "",
         discount: Number(initialData.discount) || 0,
         people_count: Number(initialData.people_count) || 1,
-        _addonNames: addonNames // helper for useEffect
+        _addonNames: addonNames,
       };
     }
 
     return {
-      booking_id: "BK-" + Date.now(),
+      booking_id: `BK-${Date.now()}`,
       customer_id: "",
       room_id: initialData?.room_id || "",
       ...getDefaultDateTimes(selectedDate),
@@ -238,58 +339,55 @@ export default function BookingForm({
     };
   });
 
-  // ── Conflict detection (string-based) ───────────────────────
-  /**
-   * Returns a conflict object { start, end } (as normalised strings) if the
-   * given roomId overlaps with an existing booking, otherwise null.
-   *
-   * Skips the booking being edited (same booking_id) to allow re-saving.
-   */
   const getRoomConflict = (roomId) => {
     const roomBookings = calendarBookings.filter(
-      (b) =>
-        b.room_id === roomId &&
-        // When editing, skip the current booking so it doesn't conflict with itself
-        b.booking_id !== form.booking_id
+      (booking) =>
+        booking.room_id === roomId && booking.booking_id !== form.booking_id
     );
+
     if (roomBookings.length === 0) return null;
 
-    // Normalise the form's check-in/out to comparable strings
     const formStart = normaliseDateStr(form.check_in);
     const formEnd = form.check_out
       ? normaliseDateStr(form.check_out)
       : addOneDayToStr(formStart);
 
-    // If no check-in is set yet, treat the first booking on this room as a soft conflict
     if (!formStart) {
-      const b = roomBookings[0];
-      const bStart = normaliseDateStr(b.check_in);
-      const bEnd = b.check_out
-        ? normaliseDateStr(b.check_out)
-        : addOneDayToStr(bStart);
-      return { start: bStart, end: bEnd };
+      const booking = roomBookings[0];
+      const bookingStart = normaliseDateStr(booking.check_in);
+      const bookingEnd = booking.check_out
+        ? normaliseDateStr(booking.check_out)
+        : addOneDayToStr(bookingStart);
+      return { start: bookingStart, end: bookingEnd };
     }
 
-    for (const b of roomBookings) {
-      const bStart = normaliseDateStr(b.check_in);
-      const bEnd = b.check_out
-        ? normaliseDateStr(b.check_out)
-        : addOneDayToStr(bStart);
+    for (const booking of roomBookings) {
+      const bookingStart = normaliseDateStr(booking.check_in);
+      const bookingEnd = booking.check_out
+        ? normaliseDateStr(booking.check_out)
+        : addOneDayToStr(bookingStart);
 
-      if (intervalsOverlap(formStart, formEnd, bStart, bEnd)) {
-        return { start: bStart, end: bEnd };
+      if (intervalsOverlap(formStart, formEnd, bookingStart, bookingEnd)) {
+        return { start: bookingStart, end: bookingEnd };
       }
     }
 
     return null;
   };
 
-  // ── Fetch data on mount ─────────────────────────────────────
+  const getCustomerPhone = (customer) =>
+    customer?.phone || customer?.contact || "";
+
+  const formatCustomerLabel = (customer) => {
+    const name = customer?.name || "Unknown Customer";
+    const phone = getCustomerPhone(customer) || "N/A";
+    return `${name} - ${phone}`;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         const token = localStorage.getItem("token");
-
         const [resCustomers, resRooms, resAddons, resCalendar] =
           await Promise.all([
             axios.get(`${API_BASE_URL}/api/customers`),
@@ -305,12 +403,6 @@ export default function BookingForm({
         setAvailableAddons(resAddons.data);
         setCalendarBookings(resCalendar.data);
 
-        // Build initial add_ons map from fetched addons
-        const addonsObj = {};
-        resAddons.data.forEach((a) => {
-          addonsObj[a.name] = false;
-        });
-
         setForm((prev) => {
           const names = prev._addonNames || [];
           return {
@@ -323,11 +415,10 @@ export default function BookingForm({
               initialData && initialData.room_id !== undefined
                 ? Number(initialData.room_id)
                 : prev.room_id,
-            add_ons: resAddons.data.reduce((acc, a) => {
-              // Mark as true if this addon name was in the booking's list
-              acc[a.name] = names.includes(a.name);
+            add_ons: resAddons.data.reduce((acc, addon) => {
+              acc[addon.name] = names.includes(addon.name);
               return acc;
-            }, {})
+            }, {}),
           };
         });
       } catch (error) {
@@ -339,11 +430,10 @@ export default function BookingForm({
     fetchData();
   }, [initialData]);
 
-  // ── Auto-fill price when room changes ──────────────────────
   useEffect(() => {
     if (!form.room_id) return;
 
-    const selectedRoom = rooms.find((r) => r.id === Number(form.room_id));
+    const selectedRoom = rooms.find((room) => room.id === Number(form.room_id));
     if (selectedRoom) {
       setForm((prev) => ({
         ...prev,
@@ -353,9 +443,9 @@ export default function BookingForm({
     }
   }, [form.room_id, rooms]);
 
-  // ── Recompute room warning when dates or room changes ───────
   useEffect(() => {
     if (!form.room_id) return;
+
     const conflict = getRoomConflict(form.room_id);
     if (conflict) {
       setRoomWarning(
@@ -366,24 +456,20 @@ export default function BookingForm({
     }
   }, [form.check_in, form.check_out, form.room_id, calendarBookings]);
 
-  // ── Generic field handler ───────────────────────────────────
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  // ── Room selector ───────────────────────────────────────────
   const handleRoomChange = (e) => {
     const roomId = Number(e.target.value);
     if (!roomId) return;
 
     setForm((prev) => ({ ...prev, room_id: roomId }));
 
-    // Conflict check will run via useEffect above; but we can also set immediately
-    // by computing against current form dates (room_id update is async in state,
-    // so we pass roomId directly here).
     const roomBookings = calendarBookings.filter(
-      (b) => b.room_id === roomId && b.booking_id !== form.booking_id
+      (booking) =>
+        booking.room_id === roomId && booking.booking_id !== form.booking_id
     );
 
     const formStart = normaliseDateStr(form.check_in);
@@ -392,13 +478,17 @@ export default function BookingForm({
       : addOneDayToStr(formStart);
 
     let conflict = null;
-    for (const b of roomBookings) {
-      const bStart = normaliseDateStr(b.check_in);
-      const bEnd = b.check_out
-        ? normaliseDateStr(b.check_out)
-        : addOneDayToStr(bStart);
-      if (!formStart || intervalsOverlap(formStart, formEnd, bStart, bEnd)) {
-        conflict = { start: bStart, end: bEnd };
+    for (const booking of roomBookings) {
+      const bookingStart = normaliseDateStr(booking.check_in);
+      const bookingEnd = booking.check_out
+        ? normaliseDateStr(booking.check_out)
+        : addOneDayToStr(bookingStart);
+
+      if (
+        !formStart ||
+        intervalsOverlap(formStart, formEnd, bookingStart, bookingEnd)
+      ) {
+        conflict = { start: bookingStart, end: bookingEnd };
         break;
       }
     }
@@ -412,7 +502,6 @@ export default function BookingForm({
     }
   };
 
-  // ── Add-on toggle ───────────────────────────────────────────
   const toggleAddon = (addonName) => {
     setForm((prev) => ({
       ...prev,
@@ -423,7 +512,6 @@ export default function BookingForm({
     }));
   };
 
-  // ── Inline customer creation ────────────────────────────────
   const handleSaveCustomer = async (formData) => {
     try {
       const config = { headers: { "Content-Type": "multipart/form-data" } };
@@ -432,6 +520,7 @@ export default function BookingForm({
         formData,
         config
       );
+
       toast.success("Customer created successfully!");
       const newCustomer = res.data.customer || res.data;
       setCustomers((prev) => [...prev, newCustomer]);
@@ -443,7 +532,6 @@ export default function BookingForm({
     }
   };
 
-  // ── Submit ──────────────────────────────────────────────────
   const handleSubmit = () => {
     if (!form.customer_id) {
       toast.warning("Please select a customer.");
@@ -481,7 +569,6 @@ export default function BookingForm({
       booking_id: form.booking_id,
       customer_id: Number(form.customer_id),
       room_id: Number(form.room_id),
-      // Convert datetime-local strings back to DB format (pure string, no Date())
       check_in: inputToDbFormat(form.check_in),
       check_out: inputToDbFormat(form.check_out),
       status: form.status || "Confirmed",
@@ -492,17 +579,9 @@ export default function BookingForm({
       add_ons: selectedAddOns,
     };
 
-    console.log("📦 Submitting booking payload:", payload);
     onSubmit(payload);
   };
 
-  // ── Debug Logs (Temporary) ──────────────────────────────────
-  console.log("FORM:", form);
-  console.log("INITIAL:", initialData);
-
-  // ─────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold text-[#0A1B4D] sm:text-2xl">
@@ -512,55 +591,39 @@ export default function BookingForm({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {/* Booking ID */}
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Booking ID
           </label>
           <input
             disabled
             value={form.booking_id}
-            className="form-input w-full px-3 py-2 border border-gray-300 rounded bg-gray-50 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+            className="form-input w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
           />
         </div>
 
-        {/* Customer */}
+        {/* Customer — searchable dropdown */}
         <div className="sm:col-span-2 xl:col-span-2">
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Customer
           </label>
-          <div className="flex items-stretch gap-2">
-            <select
-              name="customer_id"
-              value={form.customer_id || ""}
-              onChange={handleChange}
-              className="form-select min-h-11 flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A1B4D' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                backgroundPosition: "right 12px center",
-                backgroundSize: "16px",
-                paddingRight: "40px",
-              }}
-            >
-              <option value="">CHOOSE CUSTOMER</option>
-              {customers.map((c) => (
-                <option key={c.id} value={Number(c.id)}>
-                  {c.name || "Unknown Customer"} — {c.contact || "N/A"}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => setShowCustomerModal(true)}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0A1B4D] text-white shadow-sm transition-colors hover:bg-[#081341]"
-              title="Add New Customer"
-            >
-              <PlusCircle size={20} />
-            </button>
-          </div>
+          <CustomerDropdown
+            customers={customers}
+            value={form.customer_id}
+            onChange={(customer) =>
+              setForm((prev) => ({
+                ...prev,
+                customer_id: customer ? Number(customer.id) : "",
+              }))
+            }
+            onAddNew={() => setShowCustomerModal(true)}
+            getCustomerPhone={getCustomerPhone}
+            formatCustomerLabel={formatCustomerLabel}
+          />
         </div>
 
         {/* Number of Guests */}
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Number of Guests
           </label>
           <input
@@ -569,21 +632,21 @@ export default function BookingForm({
             name="people_count"
             value={form.people_count ?? ""}
             onInput={(e) => {
-              const val = e.target.value;
+              const value = e.target.value;
               setForm((prev) => ({
                 ...prev,
-                people_count: val === "" ? "" : Number(val),
+                people_count: value === "" ? "" : Number(value),
               }));
             }}
-            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:outline-none focus:ring-2 focus:ring-blue-100"
           />
           {selectedRoomCapacity && (
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="mt-1 text-xs text-gray-500">
               Room capacity: {selectedRoomCapacity} guests
             </p>
           )}
           {selectedRoomCapacity && form.people_count > selectedRoomCapacity && (
-            <p className="bg-red-50 border-l-4 border-red-600 text-red-800 text-xs px-2 py-1.5 rounded mt-2">
+            <p className="mt-2 rounded border-l-4 border-red-600 bg-red-50 px-2 py-1.5 text-xs text-red-800">
               ⚠️ EXCEEDS CAPACITY ({selectedRoomCapacity} GUESTS)
             </p>
           )}
@@ -591,48 +654,49 @@ export default function BookingForm({
 
         {/* Room */}
         <div className="sm:col-span-2 xl:col-span-2">
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Room
           </label>
           <select
             name="room_id"
             value={form.room_id || ""}
             onChange={handleRoomChange}
-            className="form-select min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-select min-h-11 w-full appearance-none rounded-xl border border-gray-300 bg-white bg-no-repeat px-3 py-2 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:outline-none focus:ring-2 focus:ring-blue-100"
             style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A1B4D' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+              backgroundImage:
+                "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A1B4D' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
               backgroundPosition: "right 12px center",
               backgroundSize: "16px",
               paddingRight: "40px",
             }}
           >
             <option value="">CHOOSE ROOM</option>
-            {rooms.map((r) => (
-              <option key={r.id} value={Number(r.id)}>
-                Room {r.room_number || "N/A"} — {r.category || "General"}
+            {rooms.map((room) => (
+              <option key={room.id} value={Number(room.id)}>
+                Room {room.room_number || "N/A"} — {room.category || "General"}
               </option>
             ))}
           </select>
           {roomWarning && (
-            <p className="bg-red-50 border-l-4 border-red-600 text-red-800 text-xs px-2 py-1.5 rounded mt-2">
+            <p className="mt-2 rounded border-l-4 border-red-600 bg-red-50 px-2 py-1.5 text-xs text-red-800">
               {roomWarning}
             </p>
           )}
         </div>
 
-        {/* Price */}
+        {/* Room Price */}
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Room Price
           </label>
-          <div className="flex min-h-11 w-full items-center px-3 py-2 border border-gray-300 rounded-xl bg-gray-50 text-sm font-medium text-gray-700">
+          <div className="flex min-h-11 w-full items-center rounded-xl border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700">
             {form.price ? `₹${form.price}` : "—"}
           </div>
         </div>
 
-        {/* Advance Paid */}
+        {/* Advance Amount */}
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Advance Amount
           </label>
           <input
@@ -647,14 +711,14 @@ export default function BookingForm({
                   e.target.value === "" ? "" : Number(e.target.value),
               }))
             }
-            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:outline-none focus:ring-2 focus:ring-blue-100"
             placeholder="0"
           />
         </div>
 
         {/* Discount */}
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Discount
           </label>
           <input
@@ -662,7 +726,6 @@ export default function BookingForm({
             min={0}
             name="discount"
             value={form.discount === 0 ? "" : form.discount}
-            placeholder="0"
             onChange={(e) =>
               setForm((prev) => ({
                 ...prev,
@@ -670,14 +733,14 @@ export default function BookingForm({
                   e.target.value === "" ? "" : Number(e.target.value),
               }))
             }
-            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:outline-none focus:ring-2 focus:ring-blue-100"
             placeholder="0"
           />
         </div>
 
         {/* Check-in */}
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Check-in
           </label>
           <input
@@ -685,13 +748,13 @@ export default function BookingForm({
             name="check_in"
             value={form.check_in || ""}
             onChange={handleChange}
-            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:outline-none focus:ring-2 focus:ring-blue-100"
           />
         </div>
 
         {/* Check-out */}
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Check-out
           </label>
           <input
@@ -699,22 +762,23 @@ export default function BookingForm({
             name="check_out"
             value={form.check_out || ""}
             onChange={handleChange}
-            className="form-input min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-input min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:outline-none focus:ring-2 focus:ring-blue-100"
           />
         </div>
 
         {/* Status */}
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block uppercase">
+          <label className="mb-2 block text-sm font-medium uppercase text-gray-700">
             Status
           </label>
           <select
             name="status"
             value={form.status}
             onChange={handleChange}
-            className="form-select min-h-11 w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white appearance-none bg-no-repeat transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:ring-2 focus:ring-blue-100 focus:outline-none"
+            className="form-select min-h-11 w-full appearance-none rounded-xl border border-gray-300 bg-white bg-no-repeat px-3 py-2 text-sm transition-all duration-200 ease-out focus:border-[#0A1B4D] focus:outline-none focus:ring-2 focus:ring-blue-100"
             style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A1B4D' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+              backgroundImage:
+                "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A1B4D' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E\")",
               backgroundPosition: "right 12px center",
               backgroundSize: "16px",
               paddingRight: "40px",
@@ -730,7 +794,7 @@ export default function BookingForm({
 
       {/* Add-ons */}
       <div className="mt-6 border-t border-gray-100 pt-4">
-        <p className="text-sm font-medium text-gray-700 mb-3 uppercase">
+        <p className="mb-3 text-sm font-medium uppercase text-gray-700">
           Add-ons
         </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -739,10 +803,10 @@ export default function BookingForm({
               key={addon.id}
               type="button"
               onClick={() => toggleAddon(addon.name)}
-              className={`addon-btn inline-flex w-full items-center justify-start rounded-xl border px-4 py-3 text-left transition-all duration-200 ease-out text-sm font-medium ${
+              className={`addon-btn inline-flex w-full items-center justify-start rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all duration-200 ease-out ${
                 form.add_ons[addon.name]
-                  ? "bg-[#0A1B4D] text-white border-[#0A1B4D] hover:bg-[#081341] hover:border-[#081341]"
-                  : "bg-white border-gray-300 text-gray-700 hover:border-[#0A1B4D]"
+                  ? "border-[#0A1B4D] bg-[#0A1B4D] text-white hover:border-[#081341] hover:bg-[#081341]"
+                  : "border-gray-300 bg-white text-gray-700 hover:border-[#0A1B4D]"
               }`}
             >
               {addon.name} (₹{addon.price})
@@ -751,7 +815,7 @@ export default function BookingForm({
         </div>
       </div>
 
-      {/* Action buttons */}
+      {/* Footer Buttons */}
       <div className="mt-8 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
         <button
           onClick={onCancel}
@@ -767,7 +831,7 @@ export default function BookingForm({
         </button>
       </div>
 
-      {/* Customer modal */}
+      {/* Add Customer Modal */}
       {showCustomerModal && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/40 p-3 sm:items-center sm:p-4">
           <div className="relative w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:max-h-[90vh] sm:p-6">
@@ -776,7 +840,7 @@ export default function BookingForm({
               className="absolute right-3 top-3 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
               aria-label="Close customer form"
             >
-              ✕
+              ×
             </button>
             <CustomerForm
               onSave={handleSaveCustomer}

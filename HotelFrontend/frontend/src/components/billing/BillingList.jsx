@@ -87,41 +87,11 @@ const BillingList = () => {
       await axios.delete(`${API_BASE_URL}/api/billings/${billId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Remove deleted bill from UI
-      setBillings((prev) => prev.filter((b) => b.id !== billId));
-      setFilteredBillings((prev) => prev.filter((b) => b.id !== billId));
+      removeBillFromUi(billId);
       toast.success("Bill deleted");
     } catch (err) {
       console.error("Failed to delete bill", err);
       toast.error("Failed to delete bill");
-    }
-  };
-
-  /* ================= MARK BILL AS DOWNLOADED ================= */
-  const handleMarkDownloaded = async (billId, gstNumber) => {
-    if (!billId) {
-      toast.error("Invalid bill ID");
-      return;
-    }
-
-    // Optimistically hide the row while preserving the DB record.
-    removeBillFromUi(billId);
-    setModalOpen(false);
-    setSelectedBill(null);
-
-    try {
-      const token = localStorage.getItem("token");
-      const body = {};
-      if (gstNumber !== undefined) body.gst_number = gstNumber;
-      await axios.patch(`${API_BASE_URL}/api/billings/${billId}/downloaded`, body, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success("Bill downloaded and hidden from the list");
-    } catch (err) {
-      // Revert optimistic update on error
-      fetchBills();
-      console.error("Failed to mark bill as downloaded", err);
-      toast.error("Failed to update bill status");
     }
   };
 
@@ -195,6 +165,12 @@ const BillingList = () => {
       console.error(err);
       toast.error("Failed to fetch bill details");
     }
+  };
+
+  const handleModalDeleteComplete = (billId) => {
+    removeBillFromUi(billId);
+    setSelectedBill(null);
+    setModalOpen(false);
   };
 
   /* ================= EXPORT CSV ================= */
@@ -317,12 +293,13 @@ const BillingList = () => {
         open={modalOpen}
         onClose={() => {
           setModalOpen(false);
+          setSelectedBill(null);
         }}
         selectedBill={selectedBill}
         form={form}
         setForm={setForm}
         availableAddOns={availableAddOns}
-        onDownload={handleMarkDownloaded}
+        onDeleteComplete={handleModalDeleteComplete}
       />
     </div>
   );
