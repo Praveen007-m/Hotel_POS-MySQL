@@ -1,10 +1,39 @@
 import React, { useState } from "react";
-import { toast } from 'react-toastify';
+import { toast } from "react-toastify";
+import { Upload, X, FileText } from "lucide-react";
 
 /* Validation helpers */
 const isValidPhone = (phone) => /^[6-9]\d{9}$/.test(phone);
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+// ─── FIELD COMPONENTS ────────────────────────────────────────────────────────
+function Label({ children }) {
+  return (
+    <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-gray-500">
+      {children}
+    </label>
+  );
+}
+
+function Input({ className = "", ...props }) {
+  return (
+    <input
+      className={`w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 transition focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 hover:border-gray-300 ${className}`}
+      {...props}
+    />
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+// ─── MAIN FORM ────────────────────────────────────────────────────────────────
 export default function CustomerForm({ onSave, onCancel, existing }) {
   const empty = {
     id: null,
@@ -21,30 +50,16 @@ export default function CustomerForm({ onSave, onCancel, existing }) {
 
   const [c, setC] = useState(existing || empty);
 
+  const set = (key) => (e) => setC((prev) => ({ ...prev, [key]: e.target.value }));
+
   const submit = (e) => {
     e.preventDefault();
 
-    // ---------- MANDATORY VALIDATIONS ----------
-    if (!c.name.trim()) {
-      toast.error("Full Name is required");
-      return;
-    }
-    if (!c.contact.trim()) {
-      toast.error("Contact Number is required");
-      return;
-    }
-    if (!isValidPhone(c.contact)) {
-      toast.error("Enter a valid 10-digit mobile number");
-      return;
-    }
+    if (!c.name.trim()) { toast.error("Full Name is required"); return; }
+    if (!c.contact.trim()) { toast.error("Contact Number is required"); return; }
+    if (!isValidPhone(c.contact)) { toast.error("Enter a valid 10-digit mobile number"); return; }
+    if (c.email.trim() && !isValidEmail(c.email)) { toast.error("Enter a valid email address"); return; }
 
-    // ✅ Email validation ONLY if entered
-    if (c.email.trim() && !isValidEmail(c.email)) {
-      toast.error("Enter a valid email address");
-      return;
-    }
-
-    // ---------- FormData ----------
     const formData = new FormData();
     formData.append("name", c.name);
     formData.append("contact", c.contact);
@@ -54,223 +69,163 @@ export default function CustomerForm({ onSave, onCancel, existing }) {
     formData.append("address", c.address || "");
     formData.append("vehicle_no", c.vehicle_no || "");
     formData.append("dob", c.dob || "");
+    if (c.id_file) formData.append("document", c.id_file);
 
-    //  IMPORTANT: key name must match multer → upload.single("document")
-    if (c.id_file) {
-      formData.append("document", c.id_file);
-    }
-
-    onSave(formData); // SEND FORMDATA, NOT OBJECT
+    onSave(formData);
     setC(empty);
   };
 
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form onSubmit={submit} className="flex flex-col gap-4">
 
-      <div className="mb-6">
-        <h3 className="text-lg font-bold text-gray-900">
-          {existing ? "EDIT CUSTOMER" : "ADD NEW CUSTOMER"}
+      {/* ── Title ── */}
+      <div>
+        <h3 className="text-base font-bold text-gray-900">
+          {existing ? "Edit Customer" : "Add New Customer"}
         </h3>
-        <div className="h-0.5 bg-gradient-to-r from-gray-200 to-transparent mt-2"></div>
+        <div className="mt-1.5 h-px bg-gradient-to-r from-gray-200 to-transparent" />
       </div>
 
-      {/* Row 1: Name & Contact */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-            Full Name <span className="text-red-500">*</span>
-          </label>
-          <input
+      {/* ── Row 1: Name & Contact ── */}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={<>Full Name <span className="text-red-500 normal-case">*</span></>}>
+          <Input
             placeholder="Enter full name"
             value={c.name}
-            onChange={(e) => setC({ ...c, name: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs bg-white transition-all duration-200 focus:border-gray-400 focus:ring-1 focus:ring-gray-300 focus:outline-none placeholder:text-gray-400 hover:border-gray-300"
+            onChange={set("name")}
           />
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-            Contact Number <span className="text-red-500">*</span>
-          </label>
-          <input
+        </Field>
+        <Field label={<>Contact <span className="text-red-500 normal-case">*</span></>}>
+          <Input
             placeholder="10-digit mobile"
             value={c.contact}
             maxLength={10}
-            onChange={(e) =>
-              setC({ ...c, contact: e.target.value.replace(/\D/g, "") })
-            }
-            className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs bg-white transition-all duration-200 focus:border-gray-400 focus:ring-1 focus:ring-gray-300 focus:outline-none placeholder:text-gray-400 hover:border-gray-300"
+            onChange={(e) => setC({ ...c, contact: e.target.value.replace(/\D/g, "") })}
           />
-        </div>
+        </Field>
       </div>
 
-      {/* Row 2: Email & DOB */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-            Email <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
-          </label>
-          <input
+      {/* ── Row 2: Email & DOB ── */}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Email (optional)">
+          <Input
             type="email"
             placeholder="example@email.com"
             value={c.email}
-            onChange={(e) => setC({ ...c, email: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs bg-white transition-all duration-200 focus:border-gray-400 focus:ring-1 focus:ring-gray-300 focus:outline-none placeholder:text-gray-400 hover:border-gray-300"
+            onChange={set("email")}
           />
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-            Date of Birth <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
-          </label>
-          <input
+        </Field>
+        <Field label="Date of Birth (optional)">
+          <Input
             type="date"
             value={c.dob}
-            onChange={(e) => setC({ ...c, dob: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs bg-white transition-all duration-200 focus:border-gray-400 focus:ring-1 focus:ring-gray-300 focus:outline-none placeholder:text-gray-400 hover:border-gray-300"
+            onChange={set("dob")}
           />
-        </div>
+        </Field>
       </div>
 
-      {/* Row 3: ID Type & ID Number */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-            ID Proof Type <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
-          </label>
-          <select
-            value={c.id_type}
-            onChange={(e) => setC({ ...c, id_type: e.target.value })}
-            className="appearance-none w-full px-3 py-2 border border-gray-200 rounded-md text-xs bg-white transition-all duration-200 focus:border-gray-400 focus:ring-1 focus:ring-gray-300 focus:outline-none bg-no-repeat bg-[right_10px_center] bg-[length:16px] pr-8 cursor-pointer hover:border-gray-300"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-            }}
-          >
-            <option value="">SELECT ID PROOF TYPE</option>
-            <option value="Aadhar">AADHAAR CARD</option>
-            <option value="PAN">PAN CARD</option>
-            <option value="Passport">PASSPORT</option>
-            <option value="Driving License">DRIVING LICENSE</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-            ID Number <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
-          </label>
-          <input
+      {/* ── Row 3: ID Type & ID Number ── */}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="ID Proof Type (optional)">
+          <div className="relative">
+            <select
+              value={c.id_type}
+              onChange={set("id_type")}
+              className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 transition focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 hover:border-gray-300 cursor-pointer pr-8"
+            >
+              <option value="">Select type</option>
+              <option value="Aadhar">Aadhaar Card</option>
+              <option value="PAN">PAN Card</option>
+              <option value="Passport">Passport</option>
+              <option value="Driving License">Driving License</option>
+            </select>
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </span>
+          </div>
+        </Field>
+        <Field label="ID Number (optional)">
+          <Input
             placeholder="Enter ID number"
             value={c.id_number}
-            onChange={(e) => setC({ ...c, id_number: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs bg-white transition-all duration-200 focus:border-gray-400 focus:ring-1 focus:ring-gray-300 focus:outline-none placeholder:text-gray-400 hover:border-gray-300"
+            onChange={set("id_number")}
           />
-        </div>
+        </Field>
       </div>
 
-      {/* Row 4: Address & Vehicle */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-            Address <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
-          </label>
-          <input
+      {/* ── Row 4: Address & Vehicle ── */}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Address (optional)">
+          <Input
             placeholder="Enter address"
             value={c.address}
-            onChange={(e) => setC({ ...c, address: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs bg-white transition-all duration-200 focus:border-gray-400 focus:ring-1 focus:ring-gray-300 focus:outline-none placeholder:text-gray-400 hover:border-gray-300"
+            onChange={set("address")}
           />
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-            Vehicle Number <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
-          </label>
-          <input
-            placeholder="Enter vehicle number"
+        </Field>
+        <Field label="Vehicle Number (optional)">
+          <Input
+            placeholder="e.g. TN01AB1234"
             value={c.vehicle_no}
-            onChange={(e) => setC({ ...c, vehicle_no: e.target.value })}
-            className="w-full px-3 py-2 uppercase border border-gray-200 rounded-md text-xs bg-white transition-all duration-200 focus:border-gray-400 focus:ring-1 focus:ring-gray-300 focus:outline-none placeholder:text-gray-400 hover:border-gray-300"
+            onChange={(e) => setC({ ...c, vehicle_no: e.target.value.toUpperCase() })}
+            className="uppercase"
           />
-        </div>
+        </Field>
       </div>
 
-      {/* ID Proof Upload */}
-      <div>
-        <label className="text-xs font-semibold text-gray-900 mb-1.5 block uppercase tracking-wide">
-          ID Proof Upload <span className="text-gray-500 font-normal text-xs">(OPTIONAL)</span>
-        </label>
-
-        <div className={`border-2 border-dashed rounded-md p-2 transition-all duration-200 ${c.id_file ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-gray-400'}`}>
-          {!c.id_file ? (
-            <label className="flex flex-col items-center justify-center cursor-pointer py-3">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 mb-1 text-gray-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-              <span className="text-xs font-semibold text-gray-700">CLICK TO UPLOAD</span>
-              <span className="text-xs text-gray-500 mt-0">
-                JPG, PNG, PDF (MAX 5MB)
-              </span>
-
-              <input
-                type="file"
-                accept=".jpg,.jpeg,.png,.pdf"
-                className="hidden"
-                onChange={(e) =>
-                  setC({ ...c, id_file: e.target.files[0] || null })
-                }
-              />
-            </label>
-          ) : (
-            <div className="flex items-center justify-between bg-white rounded-md p-2 border border-green-200">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 flex items-center justify-center bg-gray-800 text-white rounded text-xs font-bold">
-                  {c.id_file.name.split('.').pop().toUpperCase().slice(0, 3)}
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-gray-900 truncate max-w-[150px]">
-                    {c.id_file.name}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {(c.id_file.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                </div>
+      {/* ── ID Proof Upload ── */}
+      <Field label="ID Proof Upload (optional)">
+        {!c.id_file ? (
+          <label className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 py-5 transition hover:border-gray-300 hover:bg-gray-100">
+            <Upload size={18} className="text-gray-400" />
+            <span className="text-xs font-semibold text-gray-600">Click to Upload</span>
+            <span className="text-[11px] text-gray-400">JPG, PNG, PDF · Max 5MB</span>
+            <input
+              type="file"
+              accept=".jpg,.jpeg,.png,.pdf"
+              className="hidden"
+              onChange={(e) => setC({ ...c, id_file: e.target.files[0] || null })}
+            />
+          </label>
+        ) : (
+          <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-800 text-white">
+                <FileText size={14} />
               </div>
-
-              <button
-                type="button"
-                onClick={() => setC({ ...c, id_file: null })}
-                className="px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded transition-colors duration-200"
-              >
-                REMOVE
-              </button>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-gray-900">
+                  {c.id_file.name}
+                </p>
+                <p className="text-[11px] text-gray-500">
+                  {(c.id_file.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+            <button
+              type="button"
+              onClick={() => setC({ ...c, id_file: null })}
+              className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-red-400 transition hover:bg-red-100 hover:text-red-600"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+      </Field>
 
-      {/* Actions */}
-      <div className="flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
+      {/* ── Actions ── */}
+      <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
         <button
           type="button"
           onClick={onCancel}
-          className="w-full rounded-md border border-gray-300 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700 transition-colors duration-200 hover:bg-gray-50 sm:w-auto"
+          className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600 transition hover:bg-gray-50"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="w-full rounded-md bg-gray-900 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition-colors duration-200 hover:bg-gray-800 sm:w-auto"
+          className="rounded-lg bg-gray-900 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-gray-700 active:scale-95"
         >
           Save Customer
         </button>
